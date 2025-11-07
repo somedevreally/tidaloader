@@ -28,6 +28,33 @@ sys.path.append(str(Path(__file__).parent.parent))
 from tidal_client import TidalAPIClient
 from troi_integration import TroiIntegration, TroiTrack
 
+class Colors:
+    RESET = '\033[0m'
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+
+def log_success(msg: str):
+    print(f"{Colors.GREEN}[SUCCESS]{Colors.RESET} {msg}")
+
+def log_error(msg: str):
+    print(f"{Colors.RED}[ERROR]{Colors.RESET} {msg}")
+
+def log_warning(msg: str):
+    print(f"{Colors.YELLOW}[WARNING]{Colors.RESET} {msg}")
+
+def log_info(msg: str):
+    print(f"{Colors.CYAN}[INFO]{Colors.RESET} {msg}")
+
+def log_step(step: str, msg: str):
+    print(f"{Colors.MAGENTA}[{step}]{Colors.RESET} {msg}")
+
 app = FastAPI(title="Troi Tidal Downloader API")
 
 app.add_middleware(
@@ -152,13 +179,13 @@ def extract_stream_url(track_data) -> Optional[str]:
                 if url_match:
                     return url_match.group(0)
             except Exception as e:
-                print(f"Failed to decode manifest: {e}")
+                log_error(f"Failed to decode manifest: {e}")
     
     return None
 
 async def download_file_async(track_id: int, stream_url: str, filepath: Path, filename: str, metadata: dict = None):
     try:
-        print(f"[3/4] Downloading {filename}...")
+        log_step("3/4", f"Downloading {filename}...")
         
         if track_id not in active_downloads:
             active_downloads[track_id] = {'progress': 0, 'status': 'downloading'}
@@ -167,7 +194,7 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
             async with session.get(stream_url, timeout=aiohttp.ClientTimeout(total=300)) as response:
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}"
-                    print(f"✗ Download failed: {error_msg}")
+                    log_error(f"Download failed: {error_msg}")
                     if track_id in active_downloads:
                         active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
                         await asyncio.sleep(2)
@@ -194,7 +221,7 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
                             await asyncio.sleep(0.01)
         
         if metadata:
-            print(f"\n[4/4] Writing metadata tags...")
+            log_step("4/4", "Writing metadata tags...")
             await write_metadata_tags(filepath, metadata)
         
         final_path = await organize_file_by_metadata(filepath, metadata)
@@ -205,8 +232,8 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
         }
         
         file_size_mb = final_path.stat().st_size / 1024 / 1024
-        print(f"\n✓ Downloaded: {filename} ({file_size_mb:.2f} MB)")
-        print(f"  Location: {final_path}")
+        log_success(f"Downloaded: {filename} ({file_size_mb:.2f} MB)")
+        log_info(f"Location: {final_path}")
         print(f"{'='*60}\n")
         
         await asyncio.sleep(2)
@@ -215,7 +242,7 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
             del active_downloads[track_id]
         
     except Exception as e:
-        print(f"✗ Download error: {e}")
+        log_error(f"Download error: {e}")
         import traceback
         traceback.print_exc()
         
@@ -227,7 +254,7 @@ async def download_file_async(track_id: int, stream_url: str, filepath: Path, fi
         if filepath.exists():
             try:
                 filepath.unlink()
-                print(f"  Cleaned up partial file: {filename}")
+                log_info(f"Cleaned up partial file: {filename}")
             except Exception:
                 pass
 
@@ -243,17 +270,17 @@ async def write_metadata_tags(filepath: Path, metadata: dict):
         quality = metadata.get('quality', 'UNKNOWN')
         
         if is_flac:
-            print(f"  File format: FLAC ({quality})")
+            log_info(f"File format: FLAC ({quality})")
             await write_flac_metadata(filepath, metadata)
         elif is_m4a:
-            print(f"  File format: M4A/AAC ({quality})")
+            log_info(f"File format: M4A/AAC ({quality})")
             await write_m4a_metadata(filepath, metadata)
         else:
-            print(f"  ⚠️  Unknown file format, skipping metadata")
-            print(f"  Header: {header.hex()}")
+            log_warning(f"Unknown file format, skipping metadata")
+            log_info(f"Header: {header.hex()}")
         
     except Exception as e:
-        print(f"  ⚠️  Failed to write metadata: {e}")
+        log_warning(f"Failed to write metadata: {e}")
         import traceback
         traceback.print_exc()
 
@@ -304,15 +331,15 @@ async def write_flac_metadata(filepath: Path, metadata: dict):
                             picture.desc = 'Cover'
                             picture.data = image_data
                             audio.add_picture(picture)
-                            print(f"  ✓ Added cover art")
+                            log_success("Added cover art")
             except Exception as e:
-                print(f"  ⚠️  Failed to add cover art: {e}")
+                log_warning(f"Failed to add cover art: {e}")
         
         audio.save()
-        print(f"  ✓ FLAC metadata tags written")
+        log_success("FLAC metadata tags written")
         
     except Exception as e:
-        print(f"  ⚠️  Failed to write FLAC metadata: {e}")
+        log_warning(f"Failed to write FLAC metadata: {e}")
         raise
 
 
@@ -351,22 +378,22 @@ async def write_m4a_metadata(filepath: Path, metadata: dict):
                         if response.status == 200:
                             image_data = await response.read()
                             audio['covr'] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
-                            print(f"  ✓ Added cover art")
+                            log_success("Added cover art")
             except Exception as e:
-                print(f"  ⚠️  Failed to add cover art: {e}")
+                log_warning(f"Failed to add cover art: {e}")
         
         audio.save()
-        print(f"  ✓ M4A metadata tags written")
+        log_success("M4A metadata tags written")
         
     except Exception as e:
-        print(f"  ⚠️  Failed to write M4A metadata: {e}")
+        log_warning(f"Failed to write M4A metadata: {e}")
         raise
 
 
 async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None):
     if metadata.get('title') and metadata.get('artist'):
         try:
-            print(f"  🎤 Fetching lyrics...")
+            log_info("Fetching lyrics...")
             lyrics_result = await lyrics_client.get_lyrics(
                 track_name=metadata['title'],
                 artist_name=metadata['artist'],
@@ -377,13 +404,13 @@ async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None
             if lyrics_result:
                 if lyrics_result.synced_lyrics:
                     metadata['synced_lyrics'] = lyrics_result.synced_lyrics
-                    print(f"  ✓ Synced lyrics found (will save to .lrc)")
+                    log_success("Synced lyrics found (will save to .lrc)")
                 elif lyrics_result.plain_lyrics:
                     metadata['plain_lyrics'] = lyrics_result.plain_lyrics
-                    print(f"  ✓ Plain lyrics found (will save to .txt)")
+                    log_success("Plain lyrics found (will save to .txt)")
                 
         except Exception as e:
-            print(f"  ⚠️  Failed to fetch lyrics: {e}")
+            log_warning(f"Failed to fetch lyrics: {e}")
         
         if audio_file and metadata.get('synced_lyrics'):
             try:
@@ -393,9 +420,9 @@ async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None
                     if line.strip():
                         audio_file[f'LYRICS_LINE_{i+1}'] = line.strip()
                 
-                print(f"  ✓ Embedded {len(lyrics_text.splitlines())} lines of lyrics")
+                log_success(f"Embedded {len(lyrics_text.splitlines())} lines of lyrics")
             except Exception as e:
-                print(f"  ⚠️  Failed to embed lyrics: {e}")
+                log_warning(f"Failed to embed lyrics: {e}")
 
 def sanitize_path_component(name: str) -> str:
     if not name:
@@ -440,7 +467,7 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
         final_dir.mkdir(parents=True, exist_ok=True)
         
         if final_path.exists():
-            print(f"  ⚠️  File already exists at: {final_path}")
+            log_warning(f"File already exists at: {final_path}")
             if temp_filepath.exists() and temp_filepath != final_path:
                 temp_filepath.unlink()
                 temp_lrc = temp_filepath.with_suffix('.lrc')
@@ -454,42 +481,42 @@ async def organize_file_by_metadata(temp_filepath: Path, metadata: dict) -> Path
         if temp_filepath != final_path:
             import shutil
             shutil.move(str(temp_filepath), str(final_path))
-            print(f"  ✓ Organized to: {artist_folder}/{album_folder}/{filename}")
+            log_success(f"Organized to: {artist_folder}/{album_folder}/{filename}")
             
             temp_lrc_path = temp_filepath.with_suffix('.lrc')
             if temp_lrc_path.exists():
                 final_lrc_path = final_path.with_suffix('.lrc')
                 shutil.move(str(temp_lrc_path), str(final_lrc_path))
-                print(f"  ✓ Moved .lrc file to organized location")
+                log_success("Moved .lrc file to organized location")
             
             temp_txt_path = temp_filepath.with_suffix('.txt')
             if temp_txt_path.exists():
                 final_txt_path = final_path.with_suffix('.txt')
                 shutil.move(str(temp_txt_path), str(final_txt_path))
-                print(f"  ✓ Moved .txt file to organized location")
+                log_success("Moved .txt file to organized location")
         
         if metadata.get('synced_lyrics'):
             lrc_path = final_path.with_suffix('.lrc')
             try:
                 with open(lrc_path, 'w', encoding='utf-8') as f:
                     f.write(metadata['synced_lyrics'])
-                print(f"  ✓ Saved synced lyrics to .lrc file")
+                log_success("Saved synced lyrics to .lrc file")
             except Exception as e:
-                print(f"  ⚠️  Failed to save .lrc file: {e}")
+                log_warning(f"Failed to save .lrc file: {e}")
         
         elif metadata.get('plain_lyrics'):
             txt_path = final_path.with_suffix('.txt')
             try:
                 with open(txt_path, 'w', encoding='utf-8') as f:
                     f.write(metadata['plain_lyrics'])
-                print(f"  ✓ Saved plain lyrics to .txt file")
+                log_success("Saved plain lyrics to .txt file")
             except Exception as e:
-                print(f"  ⚠️  Failed to save .txt file: {e}")
+                log_warning(f"Failed to save .txt file: {e}")
         
         return final_path
         
     except Exception as e:
-        print(f"  ⚠️  Failed to organize file: {e}")
+        log_warning(f"Failed to organize file: {e}")
         import traceback
         traceback.print_exc()
         return temp_filepath
@@ -501,16 +528,16 @@ async def api_root():
 @app.post("/api/troi/generate")
 async def generate_troi_playlist(request: TroiGenerateRequest):
     try:
-        print(f"Generating Troi playlist for {request.username}...")
+        log_info(f"Generating Troi playlist for {request.username}...")
         tracks = TroiIntegration.generate_playlist(
             request.username,
             request.playlist_type
         )
-        print(f"Generated {len(tracks)} tracks from Troi")
+        log_info(f"Generated {len(tracks)} tracks from Troi")
         
         validated_tracks = []
         for i, track in enumerate(tracks, 1):
-            print(f"[{i}/{len(tracks)}] Validating: {track.artist} - {track.title}")
+            log_info(f"[{i}/{len(tracks)}] Validating: {track.artist} - {track.title}")
             
             query = f"{track.artist} {track.title}"
             result = tidal_client.search_tracks(query)
@@ -526,11 +553,11 @@ async def generate_troi_playlist(request: TroiGenerateRequest):
                     album_data = first_track.get('album', {})
                     track.album = album_data.get('title') if isinstance(album_data, dict) else None
                     
-                    print(f"  ✓ Found on Tidal - ID: {track.tidal_id}")
+                    log_success(f"Found on Tidal - ID: {track.tidal_id}")
                 else:
-                    print(f"  ✗ Not found on Tidal")
+                    log_error("Not found on Tidal")
             else:
-                print(f"  ✗ API returned None")
+                log_error("API returned None")
             
             validated_tracks.append(TroiTrackResponse(
                 title=track.title,
@@ -544,7 +571,7 @@ async def generate_troi_playlist(request: TroiGenerateRequest):
             time.sleep(0.1)
         
         found_count = sum(1 for t in validated_tracks if t.tidal_exists)
-        print(f"\nValidation complete: {found_count}/{len(validated_tracks)} found on Tidal")
+        log_info(f"Validation complete: {found_count}/{len(validated_tracks)} found on Tidal")
         
         return {
             "tracks": validated_tracks,
@@ -553,7 +580,7 @@ async def generate_troi_playlist(request: TroiGenerateRequest):
         }
         
     except Exception as e:
-        print(f"Error generating playlist: {e}")
+        log_error(f"Error generating playlist: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -583,7 +610,7 @@ async def search_tracks(q: str):
             ]
         }
     except Exception as e:
-        print(f"Error searching tracks: {e}")
+        log_error(f"Error searching tracks: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -600,7 +627,7 @@ async def search_albums(q: str):
         
         return {"items": albums}
     except Exception as e:
-        print(f"Error searching albums: {e}")
+        log_error(f"Error searching albums: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -608,24 +635,24 @@ async def search_albums(q: str):
 @app.get("/api/search/artists")
 async def search_artists(q: str):
     try:
-        print(f"Searching for artist: {q}")
+        log_info(f"Searching for artist: {q}")
         result = tidal_client.search_artists(q)
         
         if not result:
-            print("No results from API")
+            log_info("No results from API")
             return {"items": []}
         
-        print(f"API response type: {type(result)}")
+        log_info(f"API response type: {type(result)}")
         
         artists = extract_items(result, 'artists')
         
-        print(f"Found {len(artists)} artists")
+        log_info(f"Found {len(artists)} artists")
         if artists:
-            print(f"First artist: {artists[0].get('name', 'Unknown')} (ID: {artists[0].get('id')})")
+            log_info(f"First artist: {artists[0].get('name', 'Unknown')} (ID: {artists[0].get('id')})")
         
         return {"items": artists}
     except Exception as e:
-        print(f"Error searching artists: {e}")
+        log_error(f"Error searching artists: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -633,13 +660,13 @@ async def search_artists(q: str):
 @app.get("/api/album/{album_id}/tracks")
 async def get_album_tracks(album_id: int):
     try:
-        print(f"Fetching tracks for album {album_id}...")
+        log_info(f"Fetching tracks for album {album_id}...")
         result = tidal_client.get_album(album_id)
         
         if not result:
             raise HTTPException(status_code=404, detail="Album not found")
         
-        print(f"Album API response type: {type(result)}")
+        log_info(f"Album API response type: {type(result)}")
         
         album_metadata = None
         raw_items = []
@@ -659,8 +686,8 @@ async def get_album_tracks(album_id: int):
             if 'title' in result and 'id' in result:
                 album_metadata = result
         
-        print(f"Found album metadata: {album_metadata is not None}")
-        print(f"Found {len(raw_items)} raw items")
+        log_info(f"Found album metadata: {album_metadata is not None}")
+        log_info(f"Found {len(raw_items)} raw items")
         
         tracks = []
         for raw_item in raw_items:
@@ -683,14 +710,14 @@ async def get_album_tracks(album_id: int):
             
             tracks.append(track_data)
         
-        print(f"Extracted {len(tracks)} tracks")
+        log_info(f"Extracted {len(tracks)} tracks")
         
         track_results = []
         for track in tracks:
             try:
                 track_id = track.get('id')
                 if not track_id:
-                    print(f"Warning: Track missing ID: {track.get('title', 'Unknown')}")
+                    log_warning(f"Track missing ID: {track.get('title', 'Unknown')}")
                     continue
                 
                 artist_name = "Unknown"
@@ -722,10 +749,10 @@ async def get_album_tracks(album_id: int):
                     quality=track.get('audioQuality')
                 ))
             except Exception as e:
-                print(f"Error processing track: {e}")
+                log_error(f"Error processing track: {e}")
                 continue
         
-        print(f"Successfully processed {len(track_results)} tracks")
+        log_info(f"Successfully processed {len(track_results)} tracks")
         
         response_data = {"items": track_results}
         
@@ -739,14 +766,14 @@ async def get_album_tracks(album_id: int):
                 "numberOfTracks": album_metadata.get('numberOfTracks'),
                 "numberOfVolumes": album_metadata.get('numberOfVolumes'),
             }
-            print(f"Including album metadata: {album_metadata.get('title')}")
+            log_info(f"Including album metadata: {album_metadata.get('title')}")
         
         return response_data
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting album tracks: {e}")
+        log_error(f"Error getting album tracks: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -754,13 +781,13 @@ async def get_album_tracks(album_id: int):
 @app.get("/api/artist/{artist_id}")
 async def get_artist(artist_id: int):
     try:
-        print(f"Fetching artist {artist_id}...")
+        log_info(f"Fetching artist {artist_id}...")
         result = tidal_client.get_artist(artist_id)
         
         if not result:
             raise HTTPException(status_code=404, detail="Artist not found")
         
-        print(f"Artist API response type: {type(result)}")
+        log_info(f"Artist API response type: {type(result)}")
         
         artist_data = None
         tracks = []
@@ -873,11 +900,11 @@ async def get_artist(artist_id: int):
             reverse=True
         )
         
-        print(f"Found: {len(tracks_sorted)} tracks, {len(albums_sorted)} albums")
+        log_info(f"Found: {len(tracks_sorted)} tracks, {len(albums_sorted)} albums")
         if tracks_sorted:
-            print(f"Sample track: {tracks_sorted[0].get('title', 'Unknown')}")
+            log_info(f"Sample track: {tracks_sorted[0].get('title', 'Unknown')}")
         if albums_sorted:
-            print(f"Sample album: {albums_sorted[0].get('title', 'Unknown')}")
+            log_info(f"Sample album: {albums_sorted[0].get('title', 'Unknown')}")
         
         return {
             "artist": artist_data,
@@ -888,7 +915,7 @@ async def get_artist(artist_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting artist: {e}")
+        log_error(f"Error getting artist: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -900,7 +927,7 @@ async def start_download(background_tasks: BackgroundTasks):
 @app.get("/api/download/stream/{track_id}")
 async def get_stream_url(track_id: int, quality: str = "LOSSLESS"):
     try:
-        print(f"Getting stream URL for track {track_id} at {quality} quality...")
+        log_info(f"Getting stream URL for track {track_id} at {quality} quality...")
         
         track_data = tidal_client.get_track(track_id, quality)
         
@@ -912,7 +939,7 @@ async def get_stream_url(track_id: int, quality: str = "LOSSLESS"):
         if not stream_url:
             raise HTTPException(status_code=404, detail="Stream URL not found")
         
-        print(f"Found stream URL: {stream_url[:50]}...")
+        log_info(f"Found stream URL: {stream_url[:50]}...")
         
         return {
             "stream_url": stream_url,
@@ -923,7 +950,7 @@ async def get_stream_url(track_id: int, quality: str = "LOSSLESS"):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting stream URL: {e}")
+        log_error(f"Error getting stream URL: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -987,7 +1014,7 @@ async def download_track_server_side(
             'status': 'starting'
         }
         
-        print(f"[1/4] Getting track metadata...")
+        log_step("1/4", "Getting track metadata...")
         track_info = tidal_client.get_track(request.track_id, request.quality)
         if not track_info:
             del active_downloads[request.track_id]
@@ -1026,17 +1053,17 @@ async def download_track_server_side(
                 if isinstance(album_artist, dict):
                     metadata['album_artist'] = album_artist.get('name')
         
-        print(f"✓ Track metadata: {metadata.get('artist')} - {metadata.get('title')}")
+        log_success(f"Track metadata: {metadata.get('artist')} - {metadata.get('title')}")
         if metadata.get('album'):
-            print(f"  Album: {metadata.get('album')}")
+            log_info(f"Album: {metadata.get('album')}")
         
-        print(f"\n[2/4] Getting stream URL...")
+        log_step("2/4", "Getting stream URL...")
         stream_url = extract_stream_url(track_info)
         if not stream_url:
             del active_downloads[request.track_id]
             raise HTTPException(status_code=404, detail="Stream URL not found")
         
-        print(f"✓ Stream URL: {stream_url[:60]}...")
+        log_success(f"Stream URL: {stream_url[:60]}...")
         
         if request.quality in ['LOW', 'HIGH']:
             file_ext = '.m4a'
@@ -1063,10 +1090,10 @@ async def download_track_server_side(
         
         final_filepath = DOWNLOAD_DIR / artist_folder / album_folder / final_filename
         
-        print(f"\n[3/4] Target file: {final_filepath}")
+        log_step("3/4", f"Target file: {final_filepath}")
         
         if final_filepath.exists():
-            print(f"⚠️  File already exists, skipping download")
+            log_warning("File already exists, skipping download")
             del active_downloads[request.track_id]
             return {
                 "status": "exists",
@@ -1101,7 +1128,7 @@ async def download_track_server_side(
             del active_downloads[request.track_id]
         raise
     except Exception as e:
-        print(f"✗ Download error: {e}")
+        log_error(f"Download error: {e}")
         import traceback
         traceback.print_exc()
         
@@ -1126,7 +1153,7 @@ if frontend_dist.exists():
         
         raise HTTPException(status_code=404, detail="Frontend not built")
 else:
-    print("Warning: Frontend dist folder not found. Run 'npm run build' in frontend directory.")
+    log_warning("Frontend dist folder not found. Run 'npm run build' in frontend directory.")
 
 if __name__ == "__main__":
     import uvicorn
