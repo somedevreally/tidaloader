@@ -24,24 +24,16 @@ export function AlbumPage({ albumId, onBack }) {
       console.log(`Loading album data for ID: ${albumId}`);
       const result = await api.get(`/album/${albumId}/tracks`);
 
-      // Extract album info from the API response
-      // The backend returns the full album metadata in the response
       let albumInfo = null;
 
-      // First, try to get album from the response metadata (if backend provides it)
       if (result.album) {
         albumInfo = result.album;
-      }
-      // Otherwise, extract from first track
-      else if (result.items && result.items.length > 0) {
+      } else if (result.items && result.items.length > 0) {
         const firstTrack = result.items[0];
 
-        // Handle track.album which should be an object
         if (firstTrack.album && typeof firstTrack.album === "object") {
           albumInfo = firstTrack.album;
-        }
-        // Fallback: construct from track data
-        else {
+        } else {
           albumInfo = {
             id: albumId,
             title: firstTrack.album || "Unknown Album",
@@ -51,7 +43,6 @@ export function AlbumPage({ albumId, onBack }) {
         }
       }
 
-      // Set album with fallback
       setAlbum(
         albumInfo || {
           id: albumId,
@@ -62,7 +53,6 @@ export function AlbumPage({ albumId, onBack }) {
 
       setTracks(result.items || []);
 
-      // Auto-select all tracks
       if (result.items) {
         setSelectedTracks(new Set(result.items.map((t) => t.id)));
       }
@@ -112,141 +102,238 @@ export function AlbumPage({ albumId, onBack }) {
 
   if (loading && !album) {
     return (
-      <div class="album-page">
-        <button class="back-btn" onClick={onBack}>
-          ← Back to Search
+      <div class="space-y-6">
+        <button class="btn-surface flex items-center gap-2" onClick={onBack}>
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to Search
         </button>
-        <div class="loading-message">Loading album...</div>
+        <div class="p-12 bg-primary/5 border border-primary/20 rounded-lg text-center">
+          <div class="flex items-center justify-center gap-3">
+            <svg
+              class="animate-spin h-6 w-6 text-primary"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <span class="text-base font-medium text-primary">
+              Loading album...
+            </span>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div class="album-page">
-        <button class="back-btn" onClick={onBack}>
-          ← Back to Search
+      <div class="space-y-6">
+        <button class="btn-surface flex items-center gap-2" onClick={onBack}>
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to Search
         </button>
-        <div class="error-message">{error}</div>
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-sm text-red-600">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!album && tracks.length === 0) {
     return (
-      <div class="album-page">
-        <button class="back-btn" onClick={onBack}>
-          ← Back to Search
+      <div class="space-y-6">
+        <button class="btn-surface flex items-center gap-2" onClick={onBack}>
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 19l-7-7m0 0l7-7m-7 7h18"
+            />
+          </svg>
+          Back to Search
         </button>
-        <div class="error-message">Album not found</div>
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-sm text-red-600">Album not found</p>
+        </div>
       </div>
     );
   }
 
-  // Calculate total duration
   const totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
 
   return (
-    <div class="album-page">
-      {/* Header */}
-      <div class="album-header">
-        <button class="back-btn" onClick={onBack}>
-          ← Back to Search
-        </button>
+    <div class="space-y-6">
+      <button class="btn-surface flex items-center gap-2" onClick={onBack}>
+        <svg
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M10 19l-7-7m0 0l7-7m-7 7h18"
+          />
+        </svg>
+        Back to Search
+      </button>
 
-        <div class="album-info-header">
-          {album?.cover ? (
-            <img
-              src={api.getCoverUrl(album.cover, "320")}
-              alt={album.title}
-              class="album-header-cover"
-            />
-          ) : (
-            <div class="album-header-placeholder">
-              {album?.title?.charAt(0) || "?"}
-            </div>
-          )}
+      <div class="flex flex-col md:flex-row gap-6 p-6 bg-surface-alt rounded-lg border border-border-light">
+        {album?.cover ? (
+          <img
+            src={api.getCoverUrl(album.cover, "320")}
+            alt={album.title}
+            class="w-48 h-48 rounded-lg object-cover shadow-md flex-shrink-0"
+          />
+        ) : (
+          <div class="w-48 h-48 rounded-lg bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-6xl font-bold flex-shrink-0 shadow-md">
+            {album?.title?.charAt(0) || "?"}
+          </div>
+        )}
 
-          <div class="album-header-text">
-            <h2>{album?.title || "Unknown Album"}</h2>
-            <div class="album-artist-name">
-              {album?.artist?.name || "Unknown Artist"}
-            </div>
-            <div class="album-metadata">
-              {album?.releaseDate && (
-                <span>{new Date(album.releaseDate).getFullYear()}</span>
-              )}
-              {album?.releaseDate && tracks.length > 0 && <span> • </span>}
-              {tracks.length > 0 && <span>{tracks.length} tracks</span>}
-              {totalDuration > 0 && (
-                <span> • {formatTotalDuration(totalDuration)}</span>
-              )}
-            </div>
+        <div class="flex-1 flex flex-col justify-center space-y-3">
+          <h2 class="text-2xl sm:text-3xl font-bold text-text">
+            {album?.title || "Unknown Album"}
+          </h2>
+          <p class="text-lg text-text-muted">
+            {album?.artist?.name || "Unknown Artist"}
+          </p>
+          <div class="flex flex-wrap gap-4 text-sm text-text-muted">
+            {album?.releaseDate && (
+              <span>{new Date(album.releaseDate).getFullYear()}</span>
+            )}
+            {tracks.length > 0 && (
+              <>
+                {album?.releaseDate && <span>•</span>}
+                <span>{tracks.length} tracks</span>
+              </>
+            )}
+            {totalDuration > 0 && (
+              <>
+                <span>•</span>
+                <span>{formatTotalDuration(totalDuration)}</span>
+              </>
+            )}
           </div>
         </div>
-
-        {tracks.length > 0 && (
-          <button
-            class="download-all-btn"
-            onClick={handleDownloadTracks}
-            disabled={selectedTracks.size === 0}
-          >
-            📥 Add {selectedTracks.size} Track
-            {selectedTracks.size !== 1 ? "s" : ""} to Queue
-          </button>
-        )}
       </div>
 
-      {/* Tracks */}
       {tracks.length > 0 && (
-        <div class="album-section">
-          <div class="section-header">
-            <h3>Tracks</h3>
-            <div class="section-controls">
-              <button class="select-all-btn" onClick={selectAllTracks}>
+        <div class="space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-surface-alt rounded-lg border border-border-light">
+            <div class="flex flex-wrap gap-3">
+              <button class="btn-surface text-sm" onClick={selectAllTracks}>
                 Select All
               </button>
-              <button class="deselect-all-btn" onClick={deselectAllTracks}>
+              <button class="btn-surface text-sm" onClick={deselectAllTracks}>
                 Deselect All
               </button>
             </div>
+            {selectedTracks.size > 0 && (
+              <button class="btn-primary" onClick={handleDownloadTracks}>
+                Add {selectedTracks.size} Track
+                {selectedTracks.size !== 1 ? "s" : ""} to Queue
+              </button>
+            )}
           </div>
 
-          <div class="track-list">
+          <div class="space-y-2 max-h-[600px] overflow-y-auto">
             {tracks.map((track, index) => (
-              <div key={track.id} class="track-item album-track-item">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selectedTracks.has(track.id)}
-                    onChange={() => toggleTrack(track.id)}
-                  />
-                  <span class="track-number">{index + 1}</span>
-                  <div class="track-info">
-                    <div class="track-title">{track.title}</div>
-                    <div class="track-meta">
-                      {track.artist}
-                      {track.duration && (
-                        <span class="track-duration">
-                          {" "}
-                          • {formatDuration(track.duration)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {track.quality && (
-                    <span class="quality-badge">{track.quality}</span>
-                  )}
-                </label>
-              </div>
+              <label
+                key={track.id}
+                class="flex items-center gap-3 p-3 bg-surface-alt hover:bg-background-alt rounded-lg border border-border-light cursor-pointer transition-all duration-200"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedTracks.has(track.id)}
+                  onChange={() => toggleTrack(track.id)}
+                  class="w-4 h-4 text-primary focus:ring-primary rounded"
+                />
+                <span class="text-sm font-semibold text-text-muted w-8 flex-shrink-0">
+                  {index + 1}
+                </span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-text truncate">
+                    {track.title}
+                  </p>
+                  <p class="text-xs text-text-muted truncate">
+                    {track.artist}
+                    {track.duration && (
+                      <span> • {formatDuration(track.duration)}</span>
+                    )}
+                  </p>
+                </div>
+                {track.quality && (
+                  <span class="px-2 py-1 bg-primary text-white text-xs font-semibold rounded flex-shrink-0">
+                    {track.quality}
+                  </span>
+                )}
+              </label>
             ))}
           </div>
         </div>
       )}
 
       {tracks.length === 0 && (
-        <div class="empty-state">
-          <p>No tracks found for this album</p>
+        <div class="text-center py-12">
+          <svg
+            class="w-16 h-16 mx-auto text-border mb-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+            />
+          </svg>
+          <p class="text-text-muted">No tracks found for this album</p>
         </div>
       )}
     </div>

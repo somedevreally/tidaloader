@@ -17,12 +17,15 @@ export function QualitySelector() {
   const setQuality = useDownloadStore((state) => state.setQuality);
 
   return (
-    <div class="quality-selector">
-      <label for="quality-select">Audio Quality:</label>
+    <div class="space-y-3">
+      <label for="quality-select" class="block text-sm font-semibold text-text">
+        Audio Quality
+      </label>
       <select
         id="quality-select"
         value={quality}
         onChange={(e) => setQuality(e.target.value)}
+        class="input-field cursor-pointer"
       >
         {QUALITY_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>

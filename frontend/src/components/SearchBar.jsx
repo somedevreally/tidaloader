@@ -19,14 +19,11 @@ export function SearchBar() {
     const previousType = searchType;
     setSearchType(newType);
 
-    // Clear results when switching search type
     setResults([]);
     setSelected(new Set());
     setError(null);
 
-    // Auto-trigger search if there's a query
     if (query.trim() && previousType !== newType) {
-      // Small delay to ensure UI updates
       await new Promise((resolve) => setTimeout(resolve, 50));
       handleSearch(newType);
     }
@@ -100,8 +97,8 @@ export function SearchBar() {
   };
 
   return (
-    <div class="search-bar">
-      <div class="search-input-group">
+    <div class="space-y-6">
+      <div class="flex flex-col sm:flex-row gap-3">
         <input
           type="text"
           value={query}
@@ -109,51 +106,118 @@ export function SearchBar() {
           onKeyPress={handleKeyPress}
           placeholder="Search for tracks, albums, or artists..."
           disabled={loading}
+          class="input-field flex-1"
         />
         <button
           onClick={() => handleSearch()}
           disabled={loading || !query.trim()}
+          class="btn-primary flex items-center justify-center gap-2 sm:w-auto"
         >
-          {loading ? "⏳" : "🔍"} Search
+          {loading ? (
+            <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+          ) : (
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          )}
+          Search
         </button>
       </div>
 
-      <div class="search-type">
-        <label>
+      <div class="flex flex-wrap gap-4 p-4 bg-surface-alt rounded-lg border border-border-light">
+        <label class="flex items-center gap-2 cursor-pointer">
           <input
             type="radio"
             name="type"
             value="track"
             checked={searchType === "track"}
             onChange={() => handleSearchTypeChange("track")}
+            class="w-4 h-4 text-primary focus:ring-primary"
           />
-          Track
+          <span class="text-sm font-medium text-text">Track</span>
         </label>
-        <label>
+        <label class="flex items-center gap-2 cursor-pointer">
           <input
             type="radio"
             name="type"
             value="album"
             checked={searchType === "album"}
             onChange={() => handleSearchTypeChange("album")}
+            class="w-4 h-4 text-primary focus:ring-primary"
           />
-          Album
+          <span class="text-sm font-medium text-text">Album</span>
         </label>
-        <label>
+        <label class="flex items-center gap-2 cursor-pointer">
           <input
             type="radio"
             name="type"
             value="artist"
             checked={searchType === "artist"}
             onChange={() => handleSearchTypeChange("artist")}
+            class="w-4 h-4 text-primary focus:ring-primary"
           />
-          Artist
+          <span class="text-sm font-medium text-text">Artist</span>
         </label>
       </div>
 
-      {error && <div class="error-message">{error}</div>}
+      {error && (
+        <div class="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-sm text-red-600">{error}</p>
+        </div>
+      )}
 
-      {loading && <div class="loading-message">Searching Tidal...</div>}
+      {loading && (
+        <div class="p-6 bg-primary/5 border border-primary/20 rounded-lg text-center">
+          <div class="flex items-center justify-center gap-3">
+            <svg
+              class="animate-spin h-5 w-5 text-primary"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <span class="text-sm font-medium text-primary">
+              Searching Tidal...
+            </span>
+          </div>
+        </div>
+      )}
 
       {searchType === "track" && results.length > 0 && (
         <TrackResults
@@ -177,50 +241,53 @@ export function SearchBar() {
 
 function TrackResults({ results, selected, onToggle, onAddToQueue }) {
   return (
-    <div class="search-results">
-      <div class="results-header">
-        <h3>Found {results.length} tracks</h3>
+    <div class="space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h3 class="text-lg font-semibold text-text">
+          Found {results.length} tracks
+        </h3>
         {selected.size > 0 && (
-          <button class="add-selected-btn" onClick={onAddToQueue}>
+          <button class="btn-primary" onClick={onAddToQueue}>
             Add {selected.size} to Queue
           </button>
         )}
       </div>
 
-      <div class="track-list">
+      <div class="space-y-2 max-h-[600px] overflow-y-auto">
         {results.map((track) => (
-          <div key={track.id} class="track-item search-result">
-            <label>
-              <input
-                type="checkbox"
-                checked={selected.has(track.id)}
-                onChange={() => onToggle(track.id)}
+          <label
+            key={track.id}
+            class="flex items-center gap-3 p-3 bg-surface-alt hover:bg-background-alt rounded-lg border border-border-light cursor-pointer transition-all duration-200"
+          >
+            <input
+              type="checkbox"
+              checked={selected.has(track.id)}
+              onChange={() => onToggle(track.id)}
+              class="w-4 h-4 text-primary focus:ring-primary rounded"
+            />
+            {track.cover && (
+              <img
+                src={api.getCoverUrl(track.cover, "80")}
+                alt={track.title}
+                class="w-12 h-12 rounded object-cover flex-shrink-0"
               />
-              {track.cover && (
-                <img
-                  src={api.getCoverUrl(track.cover, "80")}
-                  alt={track.title}
-                  class="track-cover"
-                />
-              )}
-              <div class="track-info">
-                <div class="track-title">{track.title}</div>
-                <div class="track-meta">
-                  {track.artist}
-                  {track.album && ` • ${track.album}`}
-                  {track.duration && (
-                    <span class="track-duration">
-                      {" "}
-                      • {formatDuration(track.duration)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {track.quality && (
-                <span class="quality-badge">{track.quality}</span>
-              )}
-            </label>
-          </div>
+            )}
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-text truncate">
+                {track.title}
+              </p>
+              <p class="text-xs text-text-muted truncate">
+                {track.artist}
+                {track.album && ` • ${track.album}`}
+                {track.duration && ` • ${formatDuration(track.duration)}`}
+              </p>
+            </div>
+            {track.quality && (
+              <span class="px-2 py-1 bg-primary text-white text-xs font-semibold rounded flex-shrink-0">
+                {track.quality}
+              </span>
+            )}
+          </label>
         ))}
       </div>
     </div>
@@ -240,34 +307,40 @@ function AlbumResults({ results }) {
   }
 
   return (
-    <div class="search-results">
-      <h3>Found {results.length} albums</h3>
-      <div class="album-grid">
+    <div class="space-y-4">
+      <h3 class="text-lg font-semibold text-text">
+        Found {results.length} albums
+      </h3>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {results.map((album) => (
           <div
             key={album.id}
-            class="album-card"
+            class="card-hover p-3"
             onClick={() => setSelectedAlbumId(album.id)}
           >
             {album.cover && (
               <img
                 src={api.getCoverUrl(album.cover, "320")}
                 alt={album.title}
-                class="album-cover"
+                class="w-full aspect-square object-cover rounded-lg mb-3"
               />
             )}
-            <div class="album-info">
-              <div class="album-title">{album.title}</div>
-              <div class="album-artist">
+            <div class="space-y-1">
+              <p class="text-sm font-semibold text-text line-clamp-2">
+                {album.title}
+              </p>
+              <p class="text-xs text-text-muted truncate">
                 {album.artist?.name || "Unknown Artist"}
-              </div>
+              </p>
               {album.numberOfTracks && (
-                <div class="album-tracks">{album.numberOfTracks} tracks</div>
+                <p class="text-xs text-text-muted">
+                  {album.numberOfTracks} tracks
+                </p>
               )}
               {album.releaseDate && (
-                <div class="album-year">
+                <p class="text-xs text-text-muted">
                   {new Date(album.releaseDate).getFullYear()}
-                </div>
+                </p>
               )}
             </div>
           </div>
@@ -290,35 +363,39 @@ function ArtistResults({ results }) {
   }
 
   return (
-    <div class="search-results">
-      <h3>Found {results.length} artists</h3>
-      <div class="artist-list">
+    <div class="space-y-4">
+      <h3 class="text-lg font-semibold text-text">
+        Found {results.length} artists
+      </h3>
+      <div class="space-y-3">
         {results.map((artist) => (
           <div
             key={artist.id}
-            class="artist-item"
+            class="flex items-center gap-4 p-4 card-hover"
             onClick={() => setSelectedArtistId(artist.id)}
           >
             {artist.picture ? (
               <img
                 src={api.getCoverUrl(artist.picture, "160")}
                 alt={artist.name}
-                class="artist-picture"
+                class="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover flex-shrink-0"
                 onError={(e) => {
                   e.target.style.display = "none";
                 }}
               />
             ) : (
-              <div class="artist-placeholder">
+              <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-2xl sm:text-3xl font-bold flex-shrink-0">
                 {artist.name?.charAt(0) || "?"}
               </div>
             )}
-            <div class="artist-info">
-              <div class="artist-name">{artist.name || "Unknown Artist"}</div>
+            <div class="flex-1 min-w-0">
+              <p class="text-base sm:text-lg font-semibold text-text truncate">
+                {artist.name || "Unknown Artist"}
+              </p>
               {artist.popularity && (
-                <div class="artist-popularity">
+                <p class="text-xs text-text-muted mt-1">
                   Popularity: {artist.popularity}
-                </div>
+                </p>
               )}
             </div>
           </div>
