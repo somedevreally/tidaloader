@@ -28,7 +28,7 @@ export function App() {
             <div class="flex items-center justify-center w-10 h-10 bg-primary rounded-xl">
               <span class="text-2xl">🦑</span>
             </div>
-            <h1 class="text-xl sm:text-2xl font-bold text-text">Squidloader</h1>
+            <h1 class="text-xl sm:text-2xl font-bold text-text">Tidaloader</h1>
           </div>
           <button
             onClick={clearCredentials}

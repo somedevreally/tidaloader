@@ -1,12 +1,15 @@
 import { h } from "preact";
-import { useState } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import { useDownloadStore } from "../stores/downloadStore";
 import { downloadManager } from "../utils/downloadManager";
 
 export function DownloadQueuePopout() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [showHoverTray, setShowHoverTray] = useState(false);
+  const hoverTimeoutRef = useRef(null);
 
   const queue = useDownloadStore((state) => state.queue);
   const downloading = useDownloadStore((state) => state.downloading);
@@ -19,6 +22,8 @@ export function DownloadQueuePopout() {
 
   const totalInQueue = queue.length + downloading.length;
   const totalActivity = totalInQueue + completed.length + failed.length;
+  const currentDownload = downloading[0];
+  const currentProgress = currentDownload?.progress || 0;
 
   const handleStart = async () => {
     setIsRunning(true);
@@ -33,49 +38,210 @@ export function DownloadQueuePopout() {
     setIsRunning(false);
   };
 
+  const handleToggleDownloads = () => {
+    if (isRunning) {
+      handleStop();
+    } else {
+      handleStart();
+    }
+  };
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsOpen(false);
+      setIsClosing(false);
+    }, 300); // Match animation duration
+  };
+
+  const handleMouseEnter = () => {
+    if (!isOpen && currentDownload) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setShowHoverTray(true);
+      }, 300);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    setShowHoverTray(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <>
-      <button
-        onClick={() => setIsOpen(true)}
-        class="fixed bottom-6 right-6 z-40 w-16 h-16 rounded-full bg-primary hover:bg-primary-dark text-white shadow-xl hover:shadow-2xl transition-all duration-200 flex items-center justify-center group"
-      >
-        <div class="relative">
-          <svg
-            class="w-7 h-7"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-            />
-          </svg>
-          {totalActivity > 0 && (
-            <span class="download-badge">
-              {totalActivity > 99 ? "99+" : totalActivity}
-            </span>
+      {/* Floating Control Panel - Hidden when popout is open */}
+      {!isOpen && (
+        <div
+          class="fixed bottom-6 right-6 z-40 flex items-center gap-3"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Hover Tray - Current Download Info */}
+          {showHoverTray && currentDownload && (
+            <div
+              class="absolute right-0 bottom-20 bg-surface rounded-xl shadow-xl border border-border-light p-4 w-[320px] animate-slide-in-tray"
+              style={{ transformOrigin: "bottom right" }}
+            >
+              <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <svg
+                    class="w-5 h-5 text-primary"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                    />
+                  </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs text-text-muted mb-1">
+                    Currently Downloading
+                  </p>
+                  <p class="text-sm font-medium text-text truncate">
+                    {currentDownload.title}
+                  </p>
+                  <p class="text-xs text-text-muted truncate">
+                    {currentDownload.artist}
+                  </p>
+                  <div class="mt-3">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-xs font-medium text-primary">
+                        {currentProgress}%
+                      </span>
+                    </div>
+                    <div class="w-full bg-border rounded-full h-1.5 overflow-hidden">
+                      <div
+                        class="h-full bg-gradient-to-r from-primary to-primary-light transition-all duration-300"
+                        style={{ width: `${currentProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-        </div>
-      </button>
 
-      {isOpen && (
-        <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div
-            class="absolute inset-0 bg-text/20 backdrop-blur-sm animate-fade-in"
-            onClick={() => setIsOpen(false)}
-          />
-          <div class="relative w-full sm:max-w-2xl bg-surface rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col animate-slide-up">
-            <div class="flex items-center justify-between p-6 border-b border-border-light flex-shrink-0">
-              <h2 class="text-xl font-bold text-text">Download Queue</h2>
-              <button
-                onClick={() => setIsOpen(false)}
-                class="p-2 hover:bg-surface-alt rounded-lg transition-colors"
+          {/* Play/Pause Button */}
+          {totalInQueue > 0 && (
+            <button
+              onClick={handleToggleDownloads}
+              class="w-12 h-12 rounded-full bg-surface hover:bg-surface-alt border-2 border-border text-text shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
+              title={isRunning ? "Pause Downloads" : "Start Downloads"}
+            >
+              {isRunning ? (
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fill-rule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              ) : (
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fill-rule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              )}
+            </button>
+          )}
+
+          {/* Main Queue Button with Progress Ring */}
+          <button
+            onClick={() => setIsOpen(true)}
+            class="relative w-16 h-16 rounded-full bg-primary hover:bg-primary-dark text-white shadow-xl hover:shadow-2xl transition-all duration-200 flex items-center justify-center group"
+          >
+            {/* Progress Ring */}
+            {currentDownload && (
+              <svg
+                class="absolute inset-0 w-full h-full -rotate-90"
+                viewBox="0 0 100 100"
               >
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="46"
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.2)"
+                  stroke-width="4"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="46"
+                  fill="none"
+                  stroke="white"
+                  stroke-width="4"
+                  stroke-linecap="round"
+                  stroke-dasharray={`${2 * Math.PI * 46}`}
+                  stroke-dashoffset={`${
+                    2 * Math.PI * 46 * (1 - currentProgress / 100)
+                  }`}
+                  class="transition-all duration-300"
+                />
+              </svg>
+            )}
+
+            {/* Icon */}
+            <div class="relative z-10">
+              <svg
+                class="w-7 h-7"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+              {totalActivity > 0 && (
+                <span class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg">
+                  {totalActivity > 99 ? "99+" : totalActivity}
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Popout Panel - Replaces button when open */}
+      {isOpen && (
+        <div class="fixed bottom-6 right-6 z-50">
+          {/* Popout Card */}
+          <div
+            class={`w-[540px] bg-surface rounded-2xl shadow-2xl border border-border-light max-h-[calc(100vh-10rem)] flex flex-col ${
+              isClosing ? "animate-popout-close" : "animate-popout-open"
+            }`}
+          >
+            {/* Clickable Header */}
+            <button
+              onClick={handleClose}
+              class="flex items-center justify-between p-5 border-b border-border-light flex-shrink-0 hover:bg-surface-alt transition-colors rounded-t-2xl group w-full text-left"
+            >
+              <h2 class="text-lg font-bold text-text">Download Queue</h2>
+              <div class="p-2 rounded-lg group-hover:bg-background-alt transition-colors">
                 <svg
-                  class="w-5 h-5 text-text-muted"
+                  class="w-5 h-5 text-text-muted group-hover:text-text transition-colors"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -87,37 +253,40 @@ export function DownloadQueuePopout() {
                     d="M6 18L18 6M6 6l12 12"
                   />
                 </svg>
-              </button>
-            </div>
+              </div>
+            </button>
 
-            <div class="flex-1 overflow-y-auto p-6 space-y-6">
-              <div class="flex flex-wrap gap-4 text-sm text-text-muted p-4 bg-surface-alt rounded-xl border border-border-light">
-                <div class="flex items-center gap-2">
-                  <div class="w-3 h-3 rounded-full bg-secondary"></div>
+            {/* Content */}
+            <div class="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Stats */}
+              <div class="flex flex-wrap gap-3 text-xs text-text-muted p-3 bg-surface-alt rounded-lg border border-border-light">
+                <div class="flex items-center gap-1.5">
+                  <div class="w-2 h-2 rounded-full bg-secondary"></div>
                   <span>Queued: {queue.length}</span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <div class="w-3 h-3 rounded-full bg-primary animate-pulse"></div>
+                <div class="flex items-center gap-1.5">
+                  <div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
                   <span>Downloading: {downloading.length}</span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <div class="w-3 h-3 rounded-full bg-primary-dark"></div>
+                <div class="flex items-center gap-1.5">
+                  <div class="w-2 h-2 rounded-full bg-primary-dark"></div>
                   <span>Completed: {completed.length}</span>
                 </div>
                 {failed.length > 0 && (
-                  <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                  <div class="flex items-center gap-1.5">
+                    <div class="w-2 h-2 rounded-full bg-red-500"></div>
                     <span>Failed: {failed.length}</span>
                   </div>
                 )}
               </div>
 
+              {/* Control Button */}
               <div class="flex gap-2">
                 {!isRunning ? (
                   <button
                     onClick={handleStart}
                     disabled={totalInQueue === 0}
-                    class="btn-primary flex items-center gap-2 flex-1"
+                    class="btn-primary flex items-center gap-2 flex-1 justify-center"
                   >
                     <svg
                       class="w-4 h-4"
@@ -131,7 +300,7 @@ export function DownloadQueuePopout() {
                 ) : (
                   <button
                     onClick={handleStop}
-                    class="bg-red-400 hover:bg-red-500 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2 flex-1"
+                    class="bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2 flex-1 justify-center"
                   >
                     <svg
                       class="w-4 h-4"
@@ -149,29 +318,33 @@ export function DownloadQueuePopout() {
                 )}
               </div>
 
+              {/* Queued Tracks */}
               {queue.length > 0 && (
                 <div>
-                  <h3 class="text-sm font-semibold text-text-muted mb-3">
+                  <h3 class="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">
                     Queued ({queue.length})
                   </h3>
-                  <div class="space-y-2 max-h-48 overflow-y-auto">
+                  <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                     {queue.map((track) => (
                       <div
                         key={track.id}
-                        class="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border-light hover:bg-background-alt transition-colors"
+                        class="flex items-center justify-between p-3 bg-surface-alt rounded-lg border border-border-light hover:bg-background-alt hover:border-primary/30 transition-all group"
                       >
                         <div class="flex-1 min-w-0">
                           <p class="text-sm font-medium text-text truncate">
-                            {track.artist} - {track.title}
+                            {track.title}
+                          </p>
+                          <p class="text-xs text-text-muted truncate">
+                            {track.artist}
                           </p>
                         </div>
                         <button
-                          class="ml-3 p-2 hover:bg-red-50 rounded-lg transition-colors duration-200 flex-shrink-0"
+                          class="ml-3 p-1.5 opacity-0 group-hover:opacity-100 hover:bg-red-50 rounded-lg transition-all duration-200 flex-shrink-0"
                           onClick={() => removeFromQueue(track.id)}
                           title="Remove from queue"
                         >
                           <svg
-                            class="w-4 h-4 text-red-400"
+                            class="w-4 h-4 text-red-500"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -190,28 +363,34 @@ export function DownloadQueuePopout() {
                 </div>
               )}
 
+              {/* Downloading Tracks */}
               {downloading.length > 0 && (
                 <div>
-                  <h3 class="text-sm font-semibold text-text-muted mb-3">
+                  <h3 class="text-xs font-semibold text-text-muted mb-2 uppercase tracking-wide">
                     Downloading ({downloading.length})
                   </h3>
                   <div class="space-y-2">
                     {downloading.map((track) => (
                       <div
                         key={track.id}
-                        class="p-4 bg-primary/5 rounded-xl border border-primary/20"
+                        class="p-3 bg-primary/5 rounded-lg border border-primary/30 shadow-sm"
                       >
                         <div class="flex items-center justify-between mb-2">
-                          <p class="text-sm font-medium text-text truncate">
-                            {track.artist} - {track.title}
-                          </p>
-                          <span class="text-xs font-semibold text-primary ml-3">
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-text truncate">
+                              {track.title}
+                            </p>
+                            <p class="text-xs text-text-muted truncate">
+                              {track.artist}
+                            </p>
+                          </div>
+                          <span class="text-xs font-bold text-primary ml-3 flex-shrink-0">
                             {track.progress || 0}%
                           </span>
                         </div>
                         <div class="w-full bg-border rounded-full h-2 overflow-hidden">
                           <div
-                            class="h-full bg-gradient-to-r from-primary to-primary-light transition-all duration-300 ease-out"
+                            class="h-full bg-gradient-to-r from-primary via-primary-light to-primary transition-all duration-300 ease-out"
                             style={{ width: `${track.progress || 0}%` }}
                           />
                         </div>
@@ -221,20 +400,21 @@ export function DownloadQueuePopout() {
                 </div>
               )}
 
+              {/* Failed Tracks */}
               {failed.length > 0 && (
                 <div>
-                  <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-semibold text-text-muted">
+                  <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-xs font-semibold text-text-muted uppercase tracking-wide">
                       Failed ({failed.length})
                     </h3>
                     <button
-                      class="text-xs text-red-400 hover:text-red-500 font-medium"
+                      class="text-xs text-red-500 hover:text-red-600 font-medium transition-colors"
                       onClick={clearFailed}
                     >
                       Clear All
                     </button>
                   </div>
-                  <div class="space-y-2 max-h-48 overflow-y-auto">
+                  <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
                     {failed.map((track) => (
                       <div
                         key={track.id}
@@ -243,14 +423,17 @@ export function DownloadQueuePopout() {
                         <div class="flex items-start justify-between">
                           <div class="flex-1 min-w-0">
                             <p class="text-sm font-medium text-text truncate">
-                              {track.artist} - {track.title}
+                              {track.title}
                             </p>
-                            <p class="text-xs text-red-400 mt-1">
+                            <p class="text-xs text-text-muted truncate">
+                              {track.artist}
+                            </p>
+                            <p class="text-xs text-red-500 mt-1">
                               {track.error}
                             </p>
                           </div>
                           <button
-                            class="ml-3 p-2 hover:bg-red-100 rounded-lg transition-colors duration-200 flex-shrink-0"
+                            class="ml-3 p-1.5 hover:bg-red-100 rounded-lg transition-colors duration-200 flex-shrink-0"
                             onClick={() => retryFailed(track.id)}
                             title="Retry download"
                           >
@@ -275,16 +458,17 @@ export function DownloadQueuePopout() {
                 </div>
               )}
 
+              {/* Completed Tracks */}
               {completed.length > 0 && (
                 <div>
                   <button
                     onClick={() => setShowCompleted(!showCompleted)}
-                    class="w-full p-4 bg-primary/10 rounded-xl border border-primary/20 hover:bg-primary/15 transition-colors"
+                    class="w-full p-3 bg-primary/10 rounded-lg border border-primary/30 hover:bg-primary/15 transition-colors"
                   >
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
                         <svg
-                          class="w-5 h-5 text-primary"
+                          class="w-4 h-4 text-primary"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -297,7 +481,7 @@ export function DownloadQueuePopout() {
                           />
                         </svg>
                         <span class="text-sm font-semibold text-primary">
-                          Completed: {completed.length} tracks
+                          Completed: {completed.length}
                         </span>
                       </div>
                       <div class="flex items-center gap-2">
@@ -306,12 +490,12 @@ export function DownloadQueuePopout() {
                             e.stopPropagation();
                             clearCompleted();
                           }}
-                          class="text-xs text-text-muted hover:text-text font-medium px-2 py-1"
+                          class="text-xs text-text-muted hover:text-text font-medium px-2 py-1 hover:bg-primary/20 rounded transition-colors"
                         >
                           Clear
                         </button>
                         <svg
-                          class={`w-5 h-5 text-primary transition-transform duration-200 ${
+                          class={`w-4 h-4 text-primary transition-transform duration-200 ${
                             showCompleted ? "rotate-180" : ""
                           }`}
                           fill="none"
@@ -330,7 +514,7 @@ export function DownloadQueuePopout() {
                   </button>
 
                   {showCompleted && (
-                    <div class="mt-3 space-y-2 max-h-64 overflow-y-auto animate-slide-up">
+                    <div class="mt-2 space-y-2 max-h-64 overflow-y-auto custom-scrollbar animate-slide-down">
                       {completed.map((track) => (
                         <div
                           key={track.id}
@@ -350,13 +534,11 @@ export function DownloadQueuePopout() {
                             </svg>
                             <div class="flex-1 min-w-0">
                               <p class="text-sm font-medium text-text truncate">
-                                {track.artist} - {track.title}
+                                {track.title}
                               </p>
-                              {track.filename && (
-                                <p class="text-xs text-text-muted truncate mt-0.5">
-                                  {track.filename}
-                                </p>
-                              )}
+                              <p class="text-xs text-text-muted truncate">
+                                {track.artist}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -366,6 +548,7 @@ export function DownloadQueuePopout() {
                 </div>
               )}
 
+              {/* Empty State */}
               {totalInQueue === 0 &&
                 completed.length === 0 &&
                 failed.length === 0 && (
@@ -383,7 +566,7 @@ export function DownloadQueuePopout() {
                         d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
                       />
                     </svg>
-                    <p class="text-text-muted">
+                    <p class="text-text-muted text-sm">
                       No tracks in queue. Add some tracks to get started!
                     </p>
                   </div>

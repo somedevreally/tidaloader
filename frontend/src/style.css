@@ -89,8 +89,16 @@
     @apply bg-primary/5 border-primary/50 shadow-sm;
   }
 
-  .download-badge {
-    @apply absolute -top-1 -right-1 min-w-[24px] h-6 px-1.5 bg-red-400 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md;
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-surface-alt rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-border hover:bg-primary/30 rounded-full;
   }
 }
 
@@ -106,9 +114,31 @@
     }
   }
 
+  @keyframes slide-in-tray {
+    from {
+      transform: translateY(10px) scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+  }
+
   @keyframes slide-up {
     from {
       transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      transform: translateY(-10px);
       opacity: 0;
     }
     to {
@@ -126,15 +156,53 @@
     }
   }
 
+  @keyframes popout-open {
+    from {
+      transform: translateY(20px) scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes popout-close {
+    from {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(20px) scale(0.95);
+      opacity: 0;
+    }
+  }
+
   .animate-slide-in {
     animation: slide-in 0.3s ease-out;
+  }
+
+  .animate-slide-in-tray {
+    animation: slide-in-tray 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slide-up {
     animation: slide-up 0.3s ease-out;
   }
 
+  .animate-slide-down {
+    animation: slide-down 0.2s ease-out;
+  }
+
   .animate-fade-in {
     animation: fade-in 0.2s ease-out;
+  }
+
+  .animate-popout-open {
+    animation: popout-open 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .animate-popout-close {
+    animation: popout-close 0.3s cubic-bezier(0.4, 0, 0.6, 1);
   }
 }
