@@ -4,8 +4,10 @@ WORKDIR /app/frontend
 
 # Copy frontend files
 COPY frontend/package*.json ./
-# Use npm install to properly resolve platform dependencies for Alpine Linux
-RUN npm install
+
+# Install dependencies with explicit platform support
+RUN npm install && \
+    npm install @rollup/rollup-linux-x64-musl --save-optional
 
 COPY frontend/ ./
 RUN npm run build
