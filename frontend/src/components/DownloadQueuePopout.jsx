@@ -201,9 +201,8 @@ export function DownloadQueuePopout() {
                   stroke-width="4"
                   stroke-linecap="round"
                   stroke-dasharray={`${2 * Math.PI * 46}`}
-                  stroke-dashoffset={`${
-                    2 * Math.PI * 46 * (1 - currentProgress / 100)
-                  }`}
+                  stroke-dashoffset={`${2 * Math.PI * 46 * (1 - currentProgress / 100)
+                    }`}
                   class="transition-all duration-300"
                 />
               </svg>
@@ -235,16 +234,15 @@ export function DownloadQueuePopout() {
 
       {isOpen && (
         <>
-          <div 
+          <div
             class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 sm:hidden animate-fade-in"
             onClick={handleClose}
           />
-          
+
           <div class="fixed inset-0 sm:inset-auto sm:bottom-6 sm:right-6 z-50 flex items-end sm:items-start justify-center sm:justify-end p-0 sm:p-0">
             <div
-              class={`w-full sm:w-[540px] bg-surface rounded-t-3xl sm:rounded-2xl shadow-2xl border-t sm:border border-border-light max-h-[85vh] sm:max-h-[calc(100vh-10rem)] flex flex-col ${
-                isClosing ? "animate-popout-close" : "animate-popout-open"
-              }`}
+              class={`w-full sm:w-[540px] bg-surface rounded-t-3xl sm:rounded-2xl shadow-2xl border-t sm:border border-border-light max-h-[85vh] sm:max-h-[calc(100vh-10rem)] flex flex-col ${isClosing ? "animate-popout-close" : "animate-popout-open"
+                }`}
             >
               <button
                 onClick={handleClose}
@@ -414,7 +412,7 @@ export function DownloadQueuePopout() {
                         Failed ({failed.length})
                       </h3>
                       <button
-                        class="text-xs text-red-500 hover:text-red-600 font-medium transition-colors"
+                        class="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 font-medium transition-colors"
                         onClick={clearFailed}
                       >
                         Clear All
@@ -424,7 +422,7 @@ export function DownloadQueuePopout() {
                       {failed.map((track) => (
                         <div
                           key={track.id}
-                          class="p-3 bg-red-50 rounded-lg border border-red-200"
+                          class="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-500/30"
                         >
                           <div class="flex items-start justify-between">
                             <div class="flex-1 min-w-0 mr-2">
@@ -434,12 +432,12 @@ export function DownloadQueuePopout() {
                               <p class="text-xs text-text-muted truncate">
                                 {track.artist}
                               </p>
-                              <p class="text-xs text-red-500 mt-1 break-words">
+                              <p class="text-xs text-red-500 dark:text-red-400 mt-1 break-words">
                                 {track.error}
                               </p>
                             </div>
                             <button
-                              class="p-1.5 hover:bg-red-100 rounded-lg transition-colors duration-200 flex-shrink-0"
+                              class="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg transition-colors duration-200 flex-shrink-0"
                               onClick={() => retryFailed(track.id)}
                               title="Retry download"
                             >
@@ -500,9 +498,8 @@ export function DownloadQueuePopout() {
                             Clear
                           </button>
                           <svg
-                            class={`w-4 h-4 text-primary transition-transform duration-200 ${
-                              showCompleted ? "rotate-180" : ""
-                            }`}
+                            class={`w-4 h-4 text-primary transition-transform duration-200 ${showCompleted ? "rotate-180" : ""
+                              }`}
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"

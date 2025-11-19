@@ -3,12 +3,58 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Light Mode Colors */
+    --color-primary: 127 166 80; /* #7fa650 */
+    --color-primary-light: 166 201 119; /* #a6c977 */
+    --color-primary-dark: 95 127 60; /* #5f7f3c */
+    
+    --color-secondary: 111 117 95; /* #6f755f */
+    --color-secondary-light: 138 144 122; /* #8a907a */
+    --color-secondary-dark: 84 90 68; /* #545a44 */
+    
+    --color-background: 247 244 233; /* #f7f4e9 */
+    --color-background-alt: 236 232 217; /* #ece8d9 */
+    
+    --color-surface: 255 255 255; /* #ffffff */
+    --color-surface-alt: 242 240 229; /* #f2f0e5 */
+    
+    --color-text: 58 64 50; /* #3a4032 */
+    --color-text-muted: 111 117 95; /* #6f755f */
+    
+    --color-border: 211 209 197; /* #d3d1c5 */
+    --color-border-light: 230 228 217; /* #e6e4d9 */
+  }
+
+  .dark {
+    /* Dark Mode Colors */
+    --color-primary: 127 166 80; /* #7fa650 - Keep brand color */
+    --color-primary-light: 166 201 119; /* #a6c977 */
+    --color-primary-dark: 95 127 60; /* #5f7f3c */
+    
+    --color-secondary: 138 144 122; /* #8a907a */
+    --color-secondary-light: 158 164 142;
+    --color-secondary-dark: 111 117 95;
+    
+    --color-background: 20 22 18; /* Darker background */
+    --color-background-alt: 28 30 24;
+    
+    --color-surface: 32 34 28; /* Dark surface */
+    --color-surface-alt: 40 42 36;
+    
+    --color-text: 236 232 217; /* Light text */
+    --color-text-muted: 158 164 142;
+    
+    --color-border: 58 64 50;
+    --color-border-light: 44 48 40;
+  }
+
   * {
     @apply box-border;
   }
 
   body {
-    @apply m-0 p-0 bg-background text-text font-sans antialiased;
+    @apply m-0 p-0 bg-background text-text font-sans antialiased transition-colors duration-200;
   }
 
   @supports (padding: max(0px)) {

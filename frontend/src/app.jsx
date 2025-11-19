@@ -9,6 +9,8 @@ import { DownloadQueuePopout } from "./components/DownloadQueuePopout";
 import { QualitySelector } from "./components/QualitySelector";
 import { Toast } from "./components/Toast";
 
+import { ThemeToggle } from "./components/ThemeToggle";
+
 export function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const clearCredentials = useAuthStore((state) => state.clearCredentials);
@@ -30,25 +32,28 @@ export function App() {
             </div>
             <h1 class="text-xl sm:text-2xl font-bold text-text">Tidaloader</h1>
           </div>
-          <button
-            onClick={clearCredentials}
-            class="flex items-center gap-2 px-4 py-2 bg-surface-alt hover:bg-background-alt border border-border text-text-muted hover:text-text rounded-lg text-sm transition-all duration-200"
-          >
-            <svg
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          <div class="flex items-center gap-3">
+            <ThemeToggle />
+            <button
+              onClick={clearCredentials}
+              class="flex items-center gap-2 px-4 py-2 bg-surface-alt hover:bg-background-alt border border-border text-text-muted hover:text-text rounded-lg text-sm transition-all duration-200"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-              />
-            </svg>
-            <span class="hidden sm:inline">Logout</span>
-          </button>
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+              <span class="hidden sm:inline">Logout</span>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -94,21 +99,19 @@ export function App() {
 
         <nav class="flex gap-2 mb-6 border-b border-border pb-0">
           <button
-            class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${
-              activeTab === "search"
-                ? "bg-surface text-primary border-b-2 border-primary -mb-px"
-                : "text-text-muted hover:text-text hover:bg-surface-alt"
-            }`}
+            class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${activeTab === "search"
+              ? "bg-surface text-primary border-b-2 border-primary -mb-px"
+              : "text-text-muted hover:text-text hover:bg-surface-alt"
+              }`}
             onClick={() => setActiveTab("search")}
           >
             Custom Search
           </button>
           <button
-            class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${
-              activeTab === "troi"
-                ? "bg-surface text-primary border-b-2 border-primary -mb-px"
-                : "text-text-muted hover:text-text hover:bg-surface-alt"
-            }`}
+            class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${activeTab === "troi"
+              ? "bg-surface text-primary border-b-2 border-primary -mb-px"
+              : "text-text-muted hover:text-text hover:bg-surface-alt"
+              }`}
             onClick={() => setActiveTab("troi")}
           >
             Troi Playlist

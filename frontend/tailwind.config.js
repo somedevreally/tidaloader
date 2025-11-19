@@ -1,34 +1,35 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
         primary: {
-          DEFAULT: "#7fa650",
-          light: "#a6c977",
-          dark: "#5f7f3c",
+          DEFAULT: "rgb(var(--color-primary) / <alpha-value>)",
+          light: "rgb(var(--color-primary-light) / <alpha-value>)",
+          dark: "rgb(var(--color-primary-dark) / <alpha-value>)",
         },
         secondary: {
-          DEFAULT: "#6f755f",
-          light: "#8a907a",
-          dark: "#545a44",
+          DEFAULT: "rgb(var(--color-secondary) / <alpha-value>)",
+          light: "rgb(var(--color-secondary-light) / <alpha-value>)",
+          dark: "rgb(var(--color-secondary-dark) / <alpha-value>)",
         },
         background: {
-          DEFAULT: "#f7f4e9",
-          alt: "#ece8d9",
+          DEFAULT: "rgb(var(--color-background) / <alpha-value>)",
+          alt: "rgb(var(--color-background-alt) / <alpha-value>)",
         },
         surface: {
-          DEFAULT: "#ffffff",
-          alt: "#f2f0e5",
+          DEFAULT: "rgb(var(--color-surface) / <alpha-value>)",
+          alt: "rgb(var(--color-surface-alt) / <alpha-value>)",
         },
         text: {
-          DEFAULT: "#3a4032",
-          muted: "#6f755f",
+          DEFAULT: "rgb(var(--color-text) / <alpha-value>)",
+          muted: "rgb(var(--color-text-muted) / <alpha-value>)",
         },
         border: {
-          DEFAULT: "#d3d1c5",
-          light: "#e6e4d9",
+          DEFAULT: "rgb(var(--color-border) / <alpha-value>)",
+          light: "rgb(var(--color-border-light) / <alpha-value>)",
         },
       },
     },
