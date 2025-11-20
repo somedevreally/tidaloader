@@ -50,3 +50,6 @@ music/*
 # Build
 frontend/dist/
 frontend/build/
+
+
+backend/download_state.json

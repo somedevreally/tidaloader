@@ -35,8 +35,7 @@ export const useDownloadStore = create(
           }
 
           console.log(
-            `Adding ${newTracks.length} new tracks to queue (${
-              tracks.length - newTracks.length
+            `Adding ${newTracks.length} new tracks to queue (${tracks.length - newTracks.length
             } duplicates skipped)`
           );
 
@@ -144,6 +143,108 @@ export const useDownloadStore = create(
             state.failed.length,
         };
       },
+
+      // State reconciliation methods for backend sync
+      syncDownloadState: (trackId, backendStatus, backendData) =>
+        set((state) => {
+          const track = state.downloading.find((t) => t.id === trackId);
+          if (!track) return state;
+
+          const newState = { ...state };
+
+          if (backendStatus === "completed") {
+            // Move from downloading to completed
+            newState.downloading = state.downloading.filter(
+              (t) => t.id !== trackId
+            );
+            newState.completed = [
+              ...state.completed,
+              {
+                ...track,
+                status: "completed",
+                progress: 100,
+                completedAt: Date.now(),
+                filename: backendData.filename || track.title,
+              },
+            ];
+          } else if (backendStatus === "failed") {
+            // Move from downloading to failed
+            newState.downloading = state.downloading.filter(
+              (t) => t.id !== trackId
+            );
+            newState.failed = [
+              ...state.failed,
+              {
+                ...track,
+                status: "failed",
+                error: backendData.error || "Download failed",
+                failedAt: Date.now(),
+              },
+            ];
+          } else if (backendStatus === "downloading") {
+            // Update progress if available
+            if (backendData.progress !== undefined) {
+              newState.downloading = state.downloading.map((t) =>
+                t.id === trackId ? { ...t, progress: backendData.progress } : t
+              );
+            }
+          }
+
+          return newState;
+        }),
+
+      bulkReconcileWithBackend: (backendState) =>
+        set((state) => {
+          const newState = {
+            downloading: [],
+            completed: [...state.completed],
+            failed: [...state.failed],
+          };
+
+          // Process each downloading track
+          for (const track of state.downloading) {
+            const trackId = String(track.tidal_id || track.id);
+
+            // Check backend status
+            if (backendState.completed && backendState.completed[trackId]) {
+              // Move to completed
+              const backendData = backendState.completed[trackId];
+              newState.completed.push({
+                ...track,
+                status: "completed",
+                progress: 100,
+                completedAt: Date.now(),
+                filename: backendData.filename || track.title,
+              });
+            } else if (backendState.failed && backendState.failed[trackId]) {
+              // Move to failed
+              const backendData = backendState.failed[trackId];
+              newState.failed.push({
+                ...track,
+                status: "failed",
+                error: backendData.error || "Download failed",
+                failedAt: Date.now(),
+              });
+            } else if (backendState.active && backendState.active[trackId]) {
+              // Still downloading - update progress
+              const backendData = backendState.active[trackId];
+              newState.downloading.push({
+                ...track,
+                progress: backendData.progress || track.progress || 0,
+              });
+            } else {
+              // Not found on backend - mark as failed
+              newState.failed.push({
+                ...track,
+                status: "failed",
+                error: "Download not found on server (may have been lost)",
+                failedAt: Date.now(),
+              });
+            }
+          }
+
+          return newState;
+        }),
     }),
     {
       name: "troi-download-queue",

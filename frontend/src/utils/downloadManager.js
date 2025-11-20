@@ -12,6 +12,7 @@ class DownloadManager {
     this.activeDownloads = new Map();
     this.progressStreams = new Map();
     this.initialized = false;
+    this.stateCheckInterval = null;
   }
 
   async initialize() {
@@ -23,16 +24,22 @@ class DownloadManager {
     console.log("🔄 Initializing download manager...");
     this.initialized = true;
 
-    const { downloading } = useDownloadStore.getState();
+    // First, sync with backend to get actual download states
+    console.log("📡 Syncing with backend state...");
+    await this.syncWithBackend();
 
-    // Reconnect to all active downloads
+    const { downloading, queue } = useDownloadStore.getState();
+
+    // Reconnect to downloads that are still active after reconciliation
     for (const track of downloading) {
       console.log(`Reconnecting to download: ${track.artist} - ${track.title}`);
       this.reconnectProgressStream(track);
     }
 
+    // Start periodic state check
+    this.startPeriodicStateCheck();
+
     // Auto-start if there are queued or downloading items
-    const { queue } = useDownloadStore.getState();
     if (downloading.length > 0 || queue.length > 0) {
       console.log("Auto-starting download manager...");
       setTimeout(() => this.start(), 1000);
@@ -208,6 +215,96 @@ class DownloadManager {
     createAuthenticatedSSE();
   }
 
+  async fetchBackendState() {
+    try {
+      const authHeader = useAuthStore.getState().getAuthHeader();
+      const headers = {};
+      if (authHeader) {
+        headers["Authorization"] = authHeader;
+      }
+
+      const response = await fetch(`${API_BASE}/download/state`, {
+        headers: headers,
+        credentials: "include",
+      });
+
+      if (response.status === 401) {
+        useAuthStore.getState().clearCredentials();
+        console.error("Authentication required for state fetch");
+        return null;
+      }
+
+      if (!response.ok) {
+        console.error(`Failed to fetch backend state: ${response.status}`);
+        return null;
+      }
+
+      const state = await response.json();
+      console.log("Backend state:", {
+        active: Object.keys(state.active || {}).length,
+        completed: Object.keys(state.completed || {}).length,
+        failed: Object.keys(state.failed || {}).length,
+      });
+      return state;
+    } catch (error) {
+      console.error("Error fetching backend state:", error);
+      return null;
+    }
+  }
+
+  async syncWithBackend() {
+    const backendState = await this.fetchBackendState();
+    if (!backendState) {
+      console.warn("Could not sync with backend - state unavailable");
+      return;
+    }
+
+    const { downloading } = useDownloadStore.getState();
+
+    if (downloading.length === 0) {
+      console.log("No downloads to reconcile");
+      return;
+    }
+
+    console.log(`🔄 Reconciling ${downloading.length} downloads with backend...`);
+
+    // Use bulk reconciliation for efficiency
+    useDownloadStore.getState().bulkReconcileWithBackend(backendState);
+
+    const afterSync = useDownloadStore.getState();
+    console.log("✅ Reconciliation complete:", {
+      stillDownloading: afterSync.downloading.length,
+      completed: afterSync.completed.length,
+      failed: afterSync.failed.length,
+    });
+  }
+
+  startPeriodicStateCheck() {
+    // Clear any existing interval
+    if (this.stateCheckInterval) {
+      clearInterval(this.stateCheckInterval);
+    }
+
+    // Check every 10 seconds as a fallback
+    this.stateCheckInterval = setInterval(async () => {
+      const { downloading } = useDownloadStore.getState();
+      if (downloading.length > 0) {
+        console.log("🔄 Periodic state check...");
+        await this.syncWithBackend();
+      }
+    }, 10000);
+
+    console.log("⏱️ Periodic state check started (every 10s)");
+  }
+
+  stopPeriodicStateCheck() {
+    if (this.stateCheckInterval) {
+      clearInterval(this.stateCheckInterval);
+      this.stateCheckInterval = null;
+      console.log("⏱️ Periodic state check stopped");
+    }
+  }
+
   async start() {
     if (this.isProcessing) {
       console.log("Download manager already running");
@@ -252,6 +349,7 @@ class DownloadManager {
     });
     this.activeDownloads.clear();
 
+    // Don't stop periodic state check - keep monitoring in background
     // Don't clear progress streams - let them continue
     // this.progressStreams.forEach((stream) => {
     //   if (stream.cancel) {
@@ -374,8 +472,7 @@ class DownloadManager {
                       if (data.progress !== undefined) {
                         updateProgress(track.id, data.progress);
                         console.log(
-                          `  Progress: ${data.progress}% (${
-                            data.status || "downloading"
+                          `  Progress: ${data.progress}% (${data.status || "downloading"
                           })`
                         );
 
