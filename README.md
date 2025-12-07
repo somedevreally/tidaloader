@@ -73,7 +73,7 @@ tidaloader/
 │   ├── tailwind.config.js
 │   └── vite.config.js
 ├── automate-troi-download.py  # Standalone CLI tool
-└── api_endpoints.json          # Tidal API endpoint list
+└── README.md
 ```
 
 ## Prerequisites
@@ -594,23 +594,15 @@ The frontend dev server runs on `http://localhost:5173` and proxies API requests
 
 ## Advanced Configuration
 
-### Adding Custom Tidal Endpoints
+### Tidal API Endpoints
 
-Edit `api_endpoints.json`:
+Endpoints are automatically fetched from a community-maintained list at startup:
+- **Remote source**: `https://raw.githubusercontent.com/EduardPrigoana/hifi-instances/refs/heads/main/instances.json`
+- **Caching**: Endpoints are cached for 1 hour (in-memory and on disk)
+- **Fallback**: If remote fetch fails, cached endpoints are used
+- **Auto-updates**: Cache refreshes automatically every hour
 
-```json
-{
-  "endpoints": [
-    {
-      "name": "custom-endpoint",
-      "url": "https://your-endpoint.example.com",
-      "priority": 1
-    }
-  ]
-}
-```
-
-Lower priority numbers are tried first.
+The application intelligently rotates through available endpoints and remembers which endpoint was last successful for each operation type, prioritizing it for future requests.
 
 ### Service Management (Linux)
 

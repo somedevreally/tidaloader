@@ -1,16 +1,33 @@
 import json
 import time
+import logging
 from pathlib import Path
 from typing import List, Dict, Optional
 import requests
 
+# Remote URL for endpoint configuration
+ENDPOINTS_URL = "https://raw.githubusercontent.com/EduardPrigoana/hifi-instances/refs/heads/main/instances.json"
+
+# Cache settings
+CACHE_TTL = 3600  # 1 hour in seconds
+
+logger = logging.getLogger(__name__)
+
+
 class TidalAPIClient:
     
-    def __init__(self, endpoints_file: Optional[Path] = None):
-        if endpoints_file is None:
-            endpoints_file = Path(__file__).parent / "api_endpoints.json"
+    def __init__(self, cache_dir: Optional[Path] = None):
+        if cache_dir is None:
+            cache_dir = Path(__file__).parent / ".cache"
         
-        self.endpoints_file = endpoints_file
+        self.cache_dir = cache_dir
+        self.cache_dir.mkdir(exist_ok=True)
+        self.cache_file = self.cache_dir / "endpoints_cache.json"
+        
+        # In-memory cache
+        self._endpoints_cache = None
+        self._cache_timestamp = None
+        
         self.endpoints = self._load_endpoints()
         self.session = requests.Session()
         self.session.headers.update({
@@ -19,31 +36,157 @@ class TidalAPIClient:
         self.success_history = {}
         self.download_status_cache = {}
     
-    def _load_endpoints(self) -> List[Dict]:
-        default_endpoints = [
-            {"name": "kraken", "url": "https://kraken.squid.wtf", "priority": 1},
-            {"name": "triton", "url": "https://triton.squid.wtf", "priority": 1},
-            {"name": "zeus", "url": "https://zeus.squid.wtf", "priority": 1},
-            {"name": "aether", "url": "https://aether.squid.wtf", "priority": 1},
-            {"name": "phoenix", "url": "https://phoenix.squid.wtf", "priority": 1},
-            {"name": "shiva", "url": "https://shiva.squid.wtf", "priority": 1},
-            {"name": "chaos", "url": "https://chaos.squid.wtf", "priority": 1},
-            {"name": "hund", "url": "https://hund.qqdl.site", "priority": 2},
-            {"name": "katze", "url": "https://katze.qqdl.site", "priority": 2},
-            {"name": "maus", "url": "https://maus.qqdl.site", "priority": 2},
-            {"name": "vogel", "url": "https://vogel.qqdl.site", "priority": 2},
-            {"name": "wolf", "url": "https://wolf.qqdl.site", "priority": 2},
+    def _fetch_endpoints_from_remote(self) -> Optional[List[Dict]]:
+        """Fetch endpoints from remote URL."""
+        try:
+            logger.info(f"Fetching endpoints from {ENDPOINTS_URL}")
+            response = requests.get(ENDPOINTS_URL, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            endpoints = self._parse_endpoints_json(data)
+            logger.info(f"Successfully fetched {len(endpoints)} endpoints from remote")
+            return endpoints
+            
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch endpoints from remote: {e}")
+            return None
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to parse remote endpoints JSON: {e}")
+            return None
+    
+    def _parse_endpoints_json(self, data: Dict) -> List[Dict]:
+        """Extract URLs from the 'api' section of the JSON."""
+        endpoints = []
+        priority = 1
+        
+        # Extract from 'api' section only (ignore 'ui' section)
+        api_section = data.get('api', {})
+        
+        for provider_name, provider_data in api_section.items():
+            urls = provider_data.get('urls', [])
+            
+            for url in urls:
+                # Remove trailing slash if present
+                url = url.rstrip('/')
+                
+                # Extract a name from the URL (e.g., "kraken.squid.wtf" -> "kraken")
+                try:
+                    hostname = url.replace('https://', '').replace('http://', '')
+                    name = hostname.split('.')[0]
+                except Exception:
+                    name = f"endpoint_{len(endpoints)}"
+                
+                endpoints.append({
+                    "name": name,
+                    "url": url,
+                    "priority": priority,
+                    "provider": provider_name
+                })
+            
+            # Increment priority for next provider (lower priority = tried first)
+            priority += 1
+        
+        return endpoints
+    
+    def _load_cached_endpoints(self) -> Optional[List[Dict]]:
+        """Load endpoints from disk cache."""
+        if not self.cache_file.exists():
+            return None
+        
+        try:
+            with open(self.cache_file, 'r') as f:
+                cache_data = json.load(f)
+                
+            # Check if cache is still valid
+            cache_time = cache_data.get('timestamp', 0)
+            if time.time() - cache_time < CACHE_TTL:
+                endpoints = cache_data.get('endpoints', [])
+                logger.info(f"Loaded {len(endpoints)} endpoints from disk cache")
+                return endpoints
+            else:
+                logger.info("Disk cache expired")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Failed to load cached endpoints: {e}")
+            return None
+    
+    def _save_cached_endpoints(self, endpoints: List[Dict]):
+        """Save endpoints to disk cache."""
+        try:
+            cache_data = {
+                'timestamp': time.time(),
+                'endpoints': endpoints
+            }
+            with open(self.cache_file, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+            logger.info(f"Saved {len(endpoints)} endpoints to disk cache")
+        except Exception as e:
+            logger.warning(f"Failed to save endpoints to cache: {e}")
+    
+    def _is_cache_valid(self) -> bool:
+        """Check if in-memory cache is still valid."""
+        if self._endpoints_cache is None or self._cache_timestamp is None:
+            return False
+        return time.time() - self._cache_timestamp < CACHE_TTL
+    
+    def _get_fallback_endpoints(self) -> List[Dict]:
+        """Emergency fallback endpoints if all else fails."""
+        logger.warning("Using fallback endpoints")
+        return [
+            {"name": "kinoplus", "url": "http://tidal.kinoplus.online", "priority": 0},
+            {"name": "wolf", "url": "https://wolf.qqdl.site", "priority": 1},
+            {"name": "maus", "url": "https://maus.qqdl.site", "priority": 1},
+            {"name": "vogel", "url": "https://vogel.qqdl.site", "priority": 1},
+            {"name": "katze", "url": "https://katze.qqdl.site", "priority": 1},
+            {"name": "hund", "url": "https://hund.qqdl.site", "priority": 1},
         ]
+    
+    def _ensure_mandatory_endpoints(self, endpoints: List[Dict]):
+        """Ensure mandatory endpoints like kinoplus are present."""
+        kinoplus_exists = any(ep.get('url') == "http://tidal.kinoplus.online" for ep in endpoints)
+        if not kinoplus_exists:
+            endpoints.insert(0, {
+                "name": "kinoplus", 
+                "url": "http://tidal.kinoplus.online", 
+                "priority": 0, 
+                "provider": "manual_mandatory"
+            })
+
+    def _load_endpoints(self) -> List[Dict]:
+        """Load endpoints with caching strategy."""
+        # 1. Check in-memory cache
+        if self._is_cache_valid():
+            logger.info("Using in-memory cached endpoints")
+            return self._endpoints_cache
         
-        if self.endpoints_file.exists():
-            try:
-                with open(self.endpoints_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get('endpoints', default_endpoints)
-            except Exception:
-                pass
+        endpoints = None
         
-        return default_endpoints
+        # 2. Try to fetch from remote
+        endpoints = self._fetch_endpoints_from_remote()
+        
+        # 3. Try disk cache if remote failed
+        if not endpoints:
+             endpoints = self._load_cached_endpoints()
+        
+        # 4. Use fallback endpoints if everything else failed
+        if not endpoints:
+            endpoints = self._get_fallback_endpoints()
+            
+        # Ensure mandatory endpoints are present
+        if endpoints:
+            self._ensure_mandatory_endpoints(endpoints)
+            
+            # Save to disk cache if we fetched from remote (and it's not just fallback)
+            # Actually we should save whatever valid list we have if it's new
+            # But let's stick to saving only if we fetched fresh or if we modified it meaningfully?
+            # For simplicity, if we have endpoints and we are here (cache invalid or missing), save it.
+            self._save_cached_endpoints(endpoints)
+            
+        self._endpoints_cache = endpoints
+        self._cache_timestamp = time.time()
+        return endpoints
     
     def _sort_endpoints_by_priority(self, operation: Optional[str] = None) -> List[Dict]:
         endpoints = self.endpoints.copy()
@@ -67,26 +210,77 @@ class TidalAPIClient:
     def _make_request(self, path: str, params: Optional[Dict] = None, operation: Optional[str] = None) -> Optional[Dict]:
         sorted_endpoints = self._sort_endpoints_by_priority(operation)
         
-        for endpoint in sorted_endpoints:
+        logger.info(f"Starting request for {operation or path} with params: {params}")
+        logger.debug(f"Trying {len(sorted_endpoints)} endpoints in order: {[ep['name'] for ep in sorted_endpoints]}")
+        
+        for idx, endpoint in enumerate(sorted_endpoints, 1):
             url = f"{endpoint['url']}{path}"
             
             try:
+                logger.debug(f"[{idx}/{len(sorted_endpoints)}] Attempting {endpoint['name']}: {url}")
                 response = self.session.get(url, params=params, timeout=10)
                 
                 if response.status_code == 429:
+                    logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned 429 (rate limited), sleeping 2s")
                     time.sleep(2)
                     continue
                 
                 if response.status_code in [500, 404]:
+                    logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned {response.status_code}, trying next endpoint")
                     continue
                 
                 if response.status_code == 200:
-                    self._record_success(endpoint, operation or path)
-                    return response.json()
-                
-            except requests.exceptions.RequestException:
+                    try:
+                        data = response.json()
+                        
+                        # Unwrap {'version': ..., 'data': ...} structure if present
+                        # Some endpoints wrap the actual Tidal response in a 'data' field
+                        if isinstance(data, dict) and 'data' in data and 'version' in data:
+                             data = data['data']
+                        
+                        # specific check for search/track lists being empty
+                        if isinstance(data, dict):
+                            # Check for common list containers that shouldn't be empty on a "success" for search
+                            # If it's a search endpoint, we expect 'tracks', 'albums', or 'artists' with items
+                            is_empty = False
+                            
+                            # For search results
+                            if 'tracks' in data and not data['tracks'].get('items'):
+                                is_empty = True
+                            elif 'albums' in data and not data['albums'].get('items'):
+                                is_empty = True
+                            elif 'artists' in data and not data['artists'].get('items'):
+                                is_empty = True
+                            
+                            # If we are strictly empty, log warning and continue unless it's the last endpoint
+                            # But wait, maybe the search genuinely has no results? 
+                            # However, in our context, we are rotating because some endpoints return NOTHING for valid queries.
+                            # So we should probably treat empty result as a "try next" condition IF we have more endpoints.
+                            
+                            if is_empty:
+                                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned 200 OK but empty content. Trying next...")
+                                continue
+                                
+                        logger.info(f"✓ Successfully got response from {endpoint['name']} ({endpoint['url']})")
+                        self._record_success(endpoint, operation or path)
+                        return data
+                    except ValueError:
+                        logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned invalid JSON, trying next endpoint")
+                        continue
+                else:
+                    logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned unexpected status {response.status_code}")
+            
+            except requests.exceptions.Timeout:
+                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} timed out after 10s")
                 continue
-        
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} connection failed: {e}")
+                continue
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} request failed: {e}")
+                continue
+    
+        logger.error(f"✗ All {len(sorted_endpoints)} endpoints failed for {operation or path}")
         return None
     
     def search_tracks(self, query: str) -> Optional[Dict]:

@@ -175,8 +175,21 @@ OPUS_QUALITY_MAP = {
 }
 
 def extract_items(result, key: str) -> List:
+    # log_info(f"extract_items called for key: {key}")
+    # log_info(f"Result type: {type(result)}")
+    
     if not result:
+        log_warning("extract_items received empty result")
         return []
+    
+    # Debug extraction for troubleshooting
+    if isinstance(result, dict):
+        if key in result:
+             pass
+             # log_info(f"Key '{key}' found in result struct")
+        else:
+             log_warning(f"Key '{key}' NOT found in result struct. Keys: {list(result.keys())}")
+
     
     if isinstance(result, list):
         if len(result) > 0 and isinstance(result[0], dict):
@@ -1315,12 +1328,14 @@ async def troi_progress_stream(
 @app.get("/api/search/tracks")
 async def search_tracks(q: str, username: str = Depends(require_auth)):
     try:
+        log_info(f"Search tracks request for query: {q}")
         result = tidal_client.search_tracks(q)
         
         if not result:
             return {"items": []}
         
         tracks = extract_items(result, 'tracks')
+        log_info(f"Found {len(tracks)} tracks")
         
         return {
             "items": [
@@ -1345,12 +1360,15 @@ async def search_tracks(q: str, username: str = Depends(require_auth)):
 @app.get("/api/search/albums")
 async def search_albums(q: str, username: str = Depends(require_auth)):
     try:
+        log_info(f"Searching albums: {q}")
         result = tidal_client.search_albums(q)
         
         if not result:
+            log_info("No ALBUM results from API")
             return {"items": []}
         
         albums = extract_items(result, 'albums')
+        log_info(f"Found {len(albums)} albums")
         
         return {"items": albums}
     except Exception as e:

@@ -1,10 +1,16 @@
-backend/api/__pycache__/
-backend/__pycache__/
-downloads/
-frontend/node_modules/
-tidal-ui-src-reference/
+# Backend
 backend/.env
-backend\download_state.json
+backend/venv/
+backend/__pycache__/
+backend/api/__pycache__/
+backend/downloads/
+backend/.cache/
+*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
 
 # Python
 __pycache__/
