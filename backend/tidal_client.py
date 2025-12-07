@@ -303,7 +303,26 @@ class TidalAPIClient:
         return self._make_request("/search/", {"a": query}, operation="search_artists")
     
     def get_track(self, track_id: int, quality: str = "LOSSLESS") -> Optional[Dict]:
+        """Get track playback info (stream URL, manifest, etc.)"""
         return self._make_request("/track/", {"id": track_id, "quality": quality}, operation="get_track")
+    
+    def get_track_metadata(self, track_id: int) -> Optional[Dict]:
+        """Get full track metadata (trackNumber, album, artist, cover, etc.)
+        This searches for the track and returns full metadata including:
+        - trackNumber, volumeNumber
+        - album (with cover, title, artist)
+        - artist info
+        - duration, isrc, etc.
+        """
+        # Search for this specific track to get full metadata
+        result = self.search_tracks(str(track_id))
+        if result and result.get('items'):
+            for item in result.get('items', []):
+                if item.get('id') == track_id:
+                    return item
+            # If exact match not found, return first result
+            return result['items'][0] if result['items'] else None
+        return None
     
     def get_album(self, album_id: int) -> Optional[Dict]:
         return self._make_request("/album/", {"id": album_id}, operation="get_album")

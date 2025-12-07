@@ -92,6 +92,8 @@ export function ArtistPage({ artistId, onBack }) {
         title: t.title,
         artist: t.artist?.name || artist.name,
         album: t.album?.title,
+        cover: t.album?.cover,
+        track_number: t.trackNumber,
         tidal_exists: true,
       }));
 
@@ -116,11 +118,13 @@ export function ArtistPage({ artistId, onBack }) {
         console.log(`Fetching tracks for album: ${album.title}`);
         const result = await api.get(`/album/${album.id}/tracks`);
 
-        const tracks = (result.items || []).map((t) => ({
+        const tracks = (result.items || []).map((t, index) => ({
           tidal_id: t.id,
           title: t.title,
           artist: t.artist || album.artist?.name || artist.name,
           album: album.title,
+          cover: album.cover,
+          track_number: t.trackNumber || index + 1,
           tidal_exists: true,
         }));
 
@@ -159,11 +163,13 @@ export function ArtistPage({ artistId, onBack }) {
         console.log(`Fetching tracks for album: ${album.title}`);
         const result = await api.get(`/album/${album.id}/tracks`);
 
-        const tracks = (result.items || []).map((t) => ({
+        const tracks = (result.items || []).map((t, index) => ({
           tidal_id: t.id,
           title: t.title,
           artist: t.artist || album.artist?.name || artist.name,
           album: album.title,
+          cover: album.cover,
+          track_number: t.trackNumber || index + 1,
           tidal_exists: true,
         }));
 

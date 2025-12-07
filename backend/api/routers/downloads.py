@@ -567,12 +567,15 @@ async def process_queue_item(item: QueueItem):
         is_opus_request = requested_quality in OPUS_QUALITY_MAP
         source_quality = 'LOSSLESS' if is_mp3_request or is_opus_request else requested_quality
         
-        # Get track info from API
+        # Get full track metadata (trackNumber, album, artist, cover, etc.)
+        track_metadata = tidal_client.get_track_metadata(track_id)
+        
+        # Get track playback info (stream URL, manifest) from API
         track_info = tidal_client.get_track(track_id, source_quality)
         if not track_info:
             raise Exception("Track not found")
         
-        # Build metadata
+        # Build metadata - prefer API data over queue item data
         metadata = {
             'quality': requested_quality,
             'source_quality': source_quality
@@ -585,10 +588,8 @@ async def process_queue_item(item: QueueItem):
             metadata['target_format'] = 'opus'
             metadata['bitrate_kbps'] = OPUS_QUALITY_MAP[requested_quality]
         
-        if isinstance(track_info, list) and len(track_info) > 0:
-            track_data = track_info[0]
-        else:
-            track_data = track_info
+        # Use track_metadata for full info (trackNumber, album.cover, etc.)
+        track_data = track_metadata if track_metadata else {}
         
         if isinstance(track_data, dict):
             metadata['title'] = track_data.get('title') or item.title
