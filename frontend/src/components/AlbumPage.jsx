@@ -91,11 +91,13 @@ export function AlbumPage({ albumId, onBack }) {
   const handleDownloadTracks = () => {
     const selectedTrackList = tracks
       .filter((t) => selectedTracks.has(t.id))
-      .map((t) => ({
+      .map((t, index) => ({
         tidal_id: t.id,
         title: t.title,
         artist: t.artist || album?.artist?.name || "Unknown Artist",
         album: album?.title || t.album,
+        track_number: t.trackNumber || t.track_number || (index + 1),
+        cover: album?.cover || t.cover,
         tidal_exists: true,
       }));
 

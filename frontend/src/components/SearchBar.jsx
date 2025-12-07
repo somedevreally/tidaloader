@@ -61,8 +61,7 @@ export function SearchBar() {
         addToast("No results found for your search", "info");
       } else {
         addToast(
-          `Found ${result.items.length} ${activeType}${
-            result.items.length !== 1 ? "s" : ""
+          `Found ${result.items.length} ${activeType}${result.items.length !== 1 ? "s" : ""
           }`,
           "success"
         );
@@ -99,6 +98,7 @@ export function SearchBar() {
         title: r.title,
         artist: r.artist,
         album: r.album,
+        cover: r.cover,
         tidal_exists: true,
       }));
 
@@ -166,11 +166,10 @@ export function SearchBar() {
         {["track", "album", "artist"].map((type) => (
           <label
             key={type}
-            class={`flex items-center gap-3 px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 ${
-              searchType === type
+            class={`flex items-center gap-3 px-4 py-2 rounded-lg cursor-pointer transition-all duration-200 ${searchType === type
                 ? "bg-primary text-white shadow-sm"
                 : "bg-surface hover:bg-background-alt border border-border"
-            }`}
+              }`}
           >
             <input
               type="radio"
@@ -289,9 +288,8 @@ function TrackResults({ results, selected, onToggle, onAddToQueue }) {
         {results.map((track) => (
           <label
             key={track.id}
-            class={`search-result-card ${
-              selected.has(track.id) ? "selected" : ""
-            }`}
+            class={`search-result-card ${selected.has(track.id) ? "selected" : ""
+              }`}
           >
             <input
               type="checkbox"

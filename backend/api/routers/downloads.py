@@ -190,6 +190,9 @@ async def download_track_server_side(
         print(f"  Track ID: {request.track_id}")
         print(f"  Artist: {request.artist}")
         print(f"  Title: {request.title}")
+        print(f"  Album: {request.album}")
+        print(f"  Track#: {request.track_number}")
+        print(f"  Cover: {request.cover}")
         print(f"  Quality: {request.quality}")
         print(f"{'='*60}\n")
         
@@ -232,21 +235,21 @@ async def download_track_server_side(
             track_data = track_info
         
         if isinstance(track_data, dict):
-            metadata['title'] = track_data.get('title', request.title)
-            metadata['track_number'] = track_data.get('trackNumber')
+            metadata['title'] = track_data.get('title') or request.title
+            metadata['track_number'] = track_data.get('trackNumber') or request.track_number
             metadata['disc_number'] = track_data.get('volumeNumber')
             metadata['date'] = track_data.get('streamStartDate', '').split('T')[0] if track_data.get('streamStartDate') else None
             metadata['duration'] = track_data.get('duration')
             
             artist_data = track_data.get('artist', {})
-            if isinstance(artist_data, dict):
-                metadata['artist'] = artist_data.get('name', request.artist)
+            if isinstance(artist_data, dict) and artist_data.get('name'):
+                metadata['artist'] = artist_data.get('name')
                 metadata['musicbrainz_artistid'] = artist_data.get('mixes')
             else:
                 metadata['artist'] = request.artist
             
             album_data = track_data.get('album', {})
-            if isinstance(album_data, dict):
+            if isinstance(album_data, dict) and album_data.get('title'):
                 metadata['album'] = album_data.get('title')
                 metadata['album_artist'] = album_data.get('artist', {}).get('name') if isinstance(album_data.get('artist'), dict) else None
                 metadata['total_tracks'] = album_data.get('numberOfTracks')
@@ -258,12 +261,24 @@ async def download_track_server_side(
                     metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
                 
                 # Check for compilation flag
-                # Tidal often doesn't explicitly flag compilations in the track info, 
-                # but we can infer it if the album artist is "Various Artists"
-                # or if the album type is "COMPILATION" (if available)
                 album_artist = metadata.get('album_artist') or ''
                 if album_data.get('type') == 'COMPILATION' or (album_artist and album_artist.lower() in ['various artists', 'various']):
                     metadata['compilation'] = True
+            else:
+                # Use album info from request if API didn't provide it
+                metadata['album'] = request.album
+                if request.cover:
+                    cover_id_str = str(request.cover).replace('-', '/')
+                    metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
+        else:
+            # Fallback to request data
+            metadata['title'] = request.title
+            metadata['artist'] = request.artist
+            metadata['album'] = request.album
+            metadata['track_number'] = request.track_number
+            if request.cover:
+                cover_id_str = str(request.cover).replace('-', '/')
+                metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
         
         log_success(f"Track metadata: {metadata.get('artist')} - {metadata.get('title')}")
         if metadata.get('album'):

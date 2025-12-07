@@ -26,6 +26,10 @@ class DownloadTrackRequest(BaseModel):
     track_id: int
     artist: str
     title: str
+    album: Optional[str] = None
+    album_id: Optional[int] = None
+    track_number: Optional[int] = None
+    cover: Optional[str] = None
     quality: Optional[str] = "LOSSLESS"
     organization_template: Optional[str] = "{Artist}/{Album}/{TrackNumber} - {Title}"
     group_compilations: Optional[bool] = True
