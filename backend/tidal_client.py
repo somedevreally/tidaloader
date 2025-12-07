@@ -240,23 +240,31 @@ class TidalAPIClient:
                              data = data['data']
                         
                         # specific check for search/track lists being empty
-                        # Only check the KEY RELEVANT to the operation type
+                        # The API can return items in two formats:
+                        # 1. Nested: {'tracks': {'items': [...]}, 'albums': {...}, ...}
+                        # 2. Direct: {'items': [...], 'limit': ..., 'offset': ...}
                         if isinstance(data, dict):
                             is_empty = False
                             
-                            # Determine which key to check based on operation
-                            if operation == "search_albums":
-                                albums_data = data.get('albums', {})
-                                if isinstance(albums_data, dict) and not albums_data.get('items'):
+                            # First check if we have a direct 'items' key (format 2)
+                            if 'items' in data and 'limit' in data:
+                                # Direct format - check if items is empty
+                                if not data.get('items'):
                                     is_empty = True
-                            elif operation == "search_tracks":
-                                tracks_data = data.get('tracks', {})
-                                if isinstance(tracks_data, dict) and not tracks_data.get('items'):
-                                    is_empty = True
-                            elif operation == "search_artists":
-                                artists_data = data.get('artists', {})
-                                if isinstance(artists_data, dict) and not artists_data.get('items'):
-                                    is_empty = True
+                            else:
+                                # Nested format - check based on operation type
+                                if operation == "search_albums":
+                                    albums_data = data.get('albums', {})
+                                    if isinstance(albums_data, dict) and not albums_data.get('items'):
+                                        is_empty = True
+                                elif operation == "search_tracks":
+                                    tracks_data = data.get('tracks', {})
+                                    if isinstance(tracks_data, dict) and not tracks_data.get('items'):
+                                        is_empty = True
+                                elif operation == "search_artists":
+                                    artists_data = data.get('artists', {})
+                                    if isinstance(artists_data, dict) and not artists_data.get('items'):
+                                        is_empty = True
                             # For other operations, don't apply the empty check
                             
                             if is_empty:

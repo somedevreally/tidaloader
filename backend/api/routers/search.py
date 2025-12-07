@@ -138,73 +138,90 @@ async def get_artist(artist_id: int, username: str = Depends(require_auth)):
         
         artist_info = tidal_client.get_artist(artist_id)
         
-        # Helper functions for this endpoint
-        def is_track_like(obj):
-            return isinstance(obj, dict) and 'id' in obj and 'title' in obj and 'duration' in obj
-
-        def is_album_like(obj):
-             return isinstance(obj, dict) and 'id' in obj and 'title' in obj and 'numberOfTracks' in obj
-
-        def is_artist_like(obj):
-             return isinstance(obj, dict) and 'id' in obj and 'name' in obj and 'type' in obj
-
+        if not artist_info:
+            return {"info": None, "top_tracks": [], "albums": []}
+        
         top_tracks = []
         albums = []
         
-        def scan_value(value, depth=0):
-            if depth > 3: return
-            
-            if isinstance(value, dict):
-                # Try to identify objects
-                if is_track_like(value):
-                    if len(top_tracks) < 10 and value.get('type') != 'VIDEO':
-                        exists = any(t['id'] == value['id'] for t in top_tracks)
-                        if not exists:
-                             top_tracks.append({
-                                 'id': value['id'],
-                                 'title': value['title'],
-                                 'album': value.get('album', {}).get('title'),
-                                 'duration': value['duration'],
-                                 'quality': value.get('audioQuality', 'LOSSLESS'),
-                                 'cover': value.get('album', {}).get('cover')
-                             })
-                
-                elif is_album_like(value):
-                    exists = any(a['id'] == value['id'] for a in albums)
-                    if not exists:
-                         albums.append({
-                             'id': value['id'],
-                             'title': value['title'],
-                             'year': value.get('releaseDate', '').split('-')[0] if value.get('releaseDate') else '',
-                             'cover': value.get('cover')
-                         })
-
-                # Recursively scan dictionary values
-                for k, v in value.items():
-                    scan_value(v, depth + 1)
-                    
-            elif isinstance(value, list):
-                # Recursively scan list items
-                for item in value:
-                    scan_value(item, depth + 1)
-
-        # Scan the artist info
-        scan_value(artist_info)
+        # Helper to check if something looks like an album
+        def is_album_like(obj):
+            return isinstance(obj, dict) and 'id' in obj and 'title' in obj and ('numberOfTracks' in obj or 'cover' in obj)
         
-        # Manual fetch if scan failed
-        if not albums:
-            log_info("Fetching albums explicitly")
-            albums_result = tidal_client.get_artist_albums(artist_id) if hasattr(tidal_client, 'get_artist_albums') else None
-            # Extract albums if result exists (implementation dependent on client)
+        # Helper to check if something looks like a track
+        def is_track_like(obj):
+            return isinstance(obj, dict) and 'id' in obj and 'title' in obj and 'duration' in obj
+        
+        # Extract albums - deeply nested: albums.rows[].modules[].pagedList.items[]
+        albums_data = artist_info.get('albums', {})
+        if isinstance(albums_data, dict):
+            # Navigate: rows -> modules -> pagedList -> items
+            rows = albums_data.get('rows', [])
+            for row in rows:
+                if isinstance(row, dict):
+                    modules = row.get('modules', [])
+                    for module in modules:
+                        if isinstance(module, dict):
+                            paged_list = module.get('pagedList', {})
+                            if isinstance(paged_list, dict):
+                                items = paged_list.get('items', [])
+                                for item in items:
+                                    album = item.get('item', item) if isinstance(item, dict) else item
+                                    if is_album_like(album):
+                                        albums.append({
+                                            'id': album['id'],
+                                            'title': album['title'],
+                                            'year': album.get('releaseDate', '').split('-')[0] if album.get('releaseDate') else '',
+                                            'cover': album.get('cover'),
+                                            'numberOfTracks': album.get('numberOfTracks')
+                                        })
             
+            # Fallback: try direct items or rows if modules structure wasn't found
+            if not albums:
+                album_list = albums_data.get('items', [])
+                for item in album_list:
+                    album = item.get('item', item) if isinstance(item, dict) else item
+                    if is_album_like(album):
+                        albums.append({
+                            'id': album['id'],
+                            'title': album['title'],
+                            'year': album.get('releaseDate', '').split('-')[0] if album.get('releaseDate') else '',
+                            'cover': album.get('cover'),
+                            'numberOfTracks': album.get('numberOfTracks')
+                        })
+        
+        # Extract tracks - they might be a direct list or in 'tracks.items'
+        tracks_data = artist_info.get('tracks', [])
+        if isinstance(tracks_data, list):
+            track_list = tracks_data
+        elif isinstance(tracks_data, dict):
+            track_list = tracks_data.get('items', tracks_data.get('rows', []))
+        else:
+            track_list = []
+        
+        for item in track_list[:10]:  # Limit to top 10
+            track = item.get('item', item) if isinstance(item, dict) else item
+            if is_track_like(track):
+                top_tracks.append({
+                    'id': track['id'],
+                    'title': track['title'],
+                    'album': track.get('album', {}).get('title') if isinstance(track.get('album'), dict) else None,
+                    'duration': track['duration'],
+                    'quality': track.get('audioQuality', 'LOSSLESS'),
+                    'cover': track.get('album', {}).get('cover') if isinstance(track.get('album'), dict) else None
+                })
+        
+        # Sort albums by year (newest first)
         def get_album_timestamp(album):
             year = album.get('year', '')
             if not year: return 0
             try: return int(year)
             except: return 0
-            
+        
         albums.sort(key=get_album_timestamp, reverse=True)
-            
+        
+        log_info(f"Found {len(albums)} albums, {len(top_tracks)} top tracks for artist {artist_id}")
+        
         return {
             "info": artist_info,
             "top_tracks": top_tracks,
