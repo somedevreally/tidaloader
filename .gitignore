@@ -61,3 +61,4 @@ frontend/build/
 backend/download_state.json
 
 backend/tidaloader_beets.yaml
+tidal-ui-analysis/

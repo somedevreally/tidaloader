@@ -135,6 +135,7 @@ class TidalAPIClient:
         """Emergency fallback endpoints if all else fails."""
         logger.warning("Using fallback endpoints")
         return [
+            {"name": "california.monochrome.tf", "url": "https://california.monochrome.tf", "priority": 0},
             {"name": "kinoplus", "url": "http://tidal.kinoplus.online", "priority": 0},
             {"name": "wolf", "url": "https://wolf.qqdl.site", "priority": 1},
             {"name": "maus", "url": "https://maus.qqdl.site", "priority": 1},
@@ -239,26 +240,27 @@ class TidalAPIClient:
                              data = data['data']
                         
                         # specific check for search/track lists being empty
+                        # Only check the KEY RELEVANT to the operation type
                         if isinstance(data, dict):
-                            # Check for common list containers that shouldn't be empty on a "success" for search
-                            # If it's a search endpoint, we expect 'tracks', 'albums', or 'artists' with items
                             is_empty = False
                             
-                            # For search results
-                            if 'tracks' in data and not data['tracks'].get('items'):
-                                is_empty = True
-                            elif 'albums' in data and not data['albums'].get('items'):
-                                is_empty = True
-                            elif 'artists' in data and not data['artists'].get('items'):
-                                is_empty = True
-                            
-                            # If we are strictly empty, log warning and continue unless it's the last endpoint
-                            # But wait, maybe the search genuinely has no results? 
-                            # However, in our context, we are rotating because some endpoints return NOTHING for valid queries.
-                            # So we should probably treat empty result as a "try next" condition IF we have more endpoints.
+                            # Determine which key to check based on operation
+                            if operation == "search_albums":
+                                albums_data = data.get('albums', {})
+                                if isinstance(albums_data, dict) and not albums_data.get('items'):
+                                    is_empty = True
+                            elif operation == "search_tracks":
+                                tracks_data = data.get('tracks', {})
+                                if isinstance(tracks_data, dict) and not tracks_data.get('items'):
+                                    is_empty = True
+                            elif operation == "search_artists":
+                                artists_data = data.get('artists', {})
+                                if isinstance(artists_data, dict) and not artists_data.get('items'):
+                                    is_empty = True
+                            # For other operations, don't apply the empty check
                             
                             if is_empty:
-                                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned 200 OK but empty content. Trying next...")
+                                logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned 200 OK but empty content for {operation}. Trying next...")
                                 continue
                                 
                         logger.info(f"✓ Successfully got response from {endpoint['name']} ({endpoint['url']})")
