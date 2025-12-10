@@ -118,23 +118,38 @@ export function LibraryArtistPage({ artistName, onBack }) {
 
         const merged = [];
         const remoteAlbums = remote.albums || [];
-        const localAlbums = local.albums || [];
-        const matchedLocalTitles = new Set();
+        const localAlbums = [...(local.albums || [])]; // Copy to allow removing items
+        const consumedLocalIndices = new Set();
 
-        // 1. Process Remote Albums (find matches in local)
+        // 1. Process Remote Albums
         remoteAlbums.forEach(rAlbum => {
             const rTitleNorm = normalize(rAlbum.title);
+            let matchIndex = -1;
 
-            // Find matched local album
-            const lMatch = localAlbums.find(l => normalize(l.title) === rTitleNorm);
+            // Strategy A: Exact ID Match (Primary)
+            matchIndex = localAlbums.findIndex((l, idx) =>
+                !consumedLocalIndices.has(idx) &&
+                l.tidal_id &&
+                String(l.tidal_id) === String(rAlbum.id)
+            );
 
-            if (lMatch) {
-                matchedLocalTitles.add(lMatch.title);
+            // Strategy B: Title Match (Fallback) - ONLY if Local has NO ID
+            if (matchIndex === -1) {
+                matchIndex = localAlbums.findIndex((l, idx) =>
+                    !consumedLocalIndices.has(idx) &&
+                    !l.tidal_id && // Critical: Only match by title if local has NO explicit ID
+                    normalize(l.title) === rTitleNorm
+                );
+            }
+
+            if (matchIndex !== -1) {
+                consumedLocalIndices.add(matchIndex);
+                const lMatch = localAlbums[matchIndex];
                 merged.push({
                     ...lMatch, // Local takes precedence for ID/path
                     remoteId: rAlbum.id,
                     remoteTracks: rAlbum.numberOfTracks,
-                    cover: rAlbum.cover, // Use remote cover if available (higher quality)
+                    cover: rAlbum.cover, // Use remote cover if available
                     origin: 'merged',
                     year: rAlbum.year || lMatch.year
                 });
@@ -149,9 +164,8 @@ export function LibraryArtistPage({ artistName, onBack }) {
         });
 
         // 2. Process remaining Local Albums (no remote match)
-        localAlbums.forEach(lAlbum => {
-            // Check if already merged using title
-            if (!matchedLocalTitles.has(lAlbum.title)) {
+        localAlbums.forEach((lAlbum, idx) => {
+            if (!consumedLocalIndices.has(idx)) {
                 merged.push({
                     ...lAlbum,
                     origin: 'local',
