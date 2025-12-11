@@ -214,10 +214,8 @@ class LibraryService:
                 "name": name,
                 "album_count": len(data["albums"]),
                 "track_count": data["track_count"],
-                "track_count": data["track_count"],
                 "image": image,
-                "image": image, # Local cover
-                "picture": data.get("picture"), # Tidal picture UUID
+                "picture": data.get("picture"),
                 "tidal_id": data.get("tidal_id")
             })
         
@@ -234,5 +232,15 @@ class LibraryService:
             artist_data['albums'].sort(key=lambda x: str(x.get('year', '0')), reverse=True)
             return artist_data
         return None
+
+    def update_artist_metadata(self, name: str, picture: str = None):
+        """Updates persistent metadata for an artist (e.g. Tidal Picture)"""
+        if name in self.library_data['artists']:
+            if picture:
+                self.library_data['artists'][name]['picture'] = picture
+                self._save_cache()
+                logger.info(f"Updated metadata for artist {name}: picture={picture}")
+            return True
+        return False
 
 library_service = LibraryService()
