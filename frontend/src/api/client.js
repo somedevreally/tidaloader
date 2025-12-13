@@ -163,10 +163,13 @@ class ApiClient {
    */
   createListenBrainzProgressStream(progressId) {
     const authHeader = useAuthStore.getState().getAuthHeader();
-    const url = new URL(
-      `${API_BASE}/listenbrainz/progress/${progressId}`,
-      window.location.origin
-    );
+    let urlString = `${API_BASE}/listenbrainz/progress/${progressId}`;
+
+    if (authHeader) {
+      urlString += `?token=${encodeURIComponent(authHeader)}`;
+    }
+
+    const url = new URL(urlString, window.location.origin);
 
     const eventSource = new EventSource(url.toString(), {
       withCredentials: true,

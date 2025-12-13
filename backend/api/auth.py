@@ -5,7 +5,7 @@ import os
 import secrets
 import base64
 from typing import Optional
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status, Header, Query
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,37 +22,28 @@ if not AUTH_USERNAME or not AUTH_PASSWORD:
         "AUTH_PASSWORD=your-secure-password"
     )
 
-def verify_credentials(authorization: Optional[str] = Header(None)) -> str:
-    """
-    Verify HTTP Basic Auth credentials from Authorization header.
-    Uses constant-time comparison to prevent timing attacks.
-    Returns username if valid, raises HTTPException if not.
-    """
-    if not authorization:
-        raise HTTPException(
+def validate_auth_string(auth_string: str) -> str:
+    """Helper to validate a raw Basic Auth string"""
+    if not auth_string:
+         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Basic"},
+            detail="Missing authorization",
         )
-    
-    # Check if it's Basic auth
-    if not authorization.startswith("Basic "):
+
+    if not auth_string.startswith("Basic "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication scheme",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
-    # Decode the base64 credentials
     try:
-        encoded_credentials = authorization.replace("Basic ", "")
+        encoded_credentials = auth_string.replace("Basic ", "")
         decoded = base64.b64decode(encoded_credentials).decode("utf-8")
         username, password = decoded.split(":", 1)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials format",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
     # Constant-time comparison to prevent timing attacks
@@ -69,10 +60,30 @@ def verify_credentials(authorization: Optional[str] = Header(None)) -> str:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
     return username
+
+def verify_credentials(authorization: Optional[str] = Header(None)) -> str:
+    """Verify HTTP Basic Auth credentials from Authorization header."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header",
+        )
+    return validate_auth_string(authorization)
+
+def require_auth_stream(token: Optional[str] = Query(None)) -> str:
+    """
+    Dependency for EventSource streams which cannot send headers.
+    Expects 'token' query param containing the full 'Basic ...' string.
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+        )
+    return validate_auth_string(token)
 
 # Dependency for protected endpoints
 def require_auth(username: str = Depends(verify_credentials)) -> str:

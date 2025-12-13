@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 
 from api.models import ListenBrainzGenerateRequest
-from api.auth import require_auth
+from api.auth import require_auth, require_auth_stream
 from api.state import lb_progress_queues
 from api.services.listenbrainz import listenbrainz_generate_with_progress
 
@@ -31,7 +31,7 @@ async def generate_listenbrainz_playlist(
 @router.get("/api/listenbrainz/progress/{progress_id}")
 async def listenbrainz_progress_stream(
     progress_id: str,
-    username: str = Depends(require_auth)
+    username: str = Depends(require_auth_stream)
 ):
     async def event_generator():
         if progress_id not in lb_progress_queues:

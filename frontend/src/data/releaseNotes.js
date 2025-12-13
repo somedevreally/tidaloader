@@ -1,5 +1,16 @@
 export const releaseNotes = [
     {
+        version: "1.0.3",
+        date: "2025-12-14",
+        title: "Weekly Jams & Core Optimizations",
+        changes: [
+            "Replaced Troi with direct ListenBrainz integration for 'Weekly Jams', reducing image size by a lot.",
+            "Major Docker optimization: Image size slashed by removing OS dependencies and using static binaries.",
+            "Fixed annoying browser 'Sign in' popups during playlist generation.",
+            "Improved backend stability and request handling."
+        ]
+    },
+    {
         version: "1.0.2",
         date: "2025-12-14",
         title: "Easter egg",
