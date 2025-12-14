@@ -9,7 +9,7 @@ import requests
 ENDPOINTS_URL = "https://raw.githubusercontent.com/EduardPrigoana/hifi-instances/refs/heads/main/instances.json"
 
 
-CACHE_TTL = 3600  # 1 hour in seconds
+CACHE_TTL = 3600
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ class TidalAPIClient:
         self.download_status_cache = {}
     
     def _fetch_endpoints_from_remote(self) -> Optional[List[Dict]]:
-        """Fetch endpoints from remote URL."""
         try:
             logger.info(f"Fetching endpoints from {ENDPOINTS_URL}")
             response = requests.get(ENDPOINTS_URL, timeout=10)
@@ -56,7 +55,6 @@ class TidalAPIClient:
             return None
     
     def _parse_endpoints_json(self, data: Dict) -> List[Dict]:
-        """Extract URLs from the 'api' section of the JSON."""
         endpoints = []
         priority = 1
         
@@ -90,7 +88,6 @@ class TidalAPIClient:
         return endpoints
     
     def _load_cached_endpoints(self) -> Optional[List[Dict]]:
-        """Load endpoints from disk cache."""
         if not self.cache_file.exists():
             return None
         
@@ -98,7 +95,6 @@ class TidalAPIClient:
             with open(self.cache_file, 'r') as f:
                 cache_data = json.load(f)
                 
-            # Check if cache is still valid
             cache_time = cache_data.get('timestamp', 0)
             if time.time() - cache_time < CACHE_TTL:
                 endpoints = cache_data.get('endpoints', [])
@@ -113,7 +109,6 @@ class TidalAPIClient:
             return None
     
     def _save_cached_endpoints(self, endpoints: List[Dict]):
-        """Save endpoints to disk cache."""
         try:
             cache_data = {
                 'timestamp': time.time(),
@@ -126,65 +121,26 @@ class TidalAPIClient:
             logger.warning(f"Failed to save endpoints to cache: {e}")
     
     def _is_cache_valid(self) -> bool:
-        """Check if in-memory cache is still valid."""
         if self._endpoints_cache is None or self._cache_timestamp is None:
             return False
         return time.time() - self._cache_timestamp < CACHE_TTL
     
-    def _get_fallback_endpoints(self) -> List[Dict]:
-        """Emergency fallback endpoints if all else fails."""
-        logger.warning("Using fallback endpoints")
-        return [
-            {"name": "california.monochrome.tf", "url": "https://california.monochrome.tf", "priority": 0},
-            {"name": "kinoplus", "url": "http://tidal.kinoplus.online", "priority": 0},
-            {"name": "wolf", "url": "https://wolf.qqdl.site", "priority": 1},
-            {"name": "maus", "url": "https://maus.qqdl.site", "priority": 1},
-            {"name": "vogel", "url": "https://vogel.qqdl.site", "priority": 1},
-            {"name": "katze", "url": "https://katze.qqdl.site", "priority": 1},
-            {"name": "hund", "url": "https://hund.qqdl.site", "priority": 1},
-        ]
-    
-    def _ensure_mandatory_endpoints(self, endpoints: List[Dict]):
-        """Ensure mandatory endpoints like kinoplus are present."""
-        kinoplus_exists = any(ep.get('url') == "http://tidal.kinoplus.online" for ep in endpoints)
-        if not kinoplus_exists:
-            endpoints.insert(0, {
-                "name": "kinoplus", 
-                "url": "http://tidal.kinoplus.online", 
-                "priority": 0, 
-                "provider": "manual_mandatory"
-            })
-
     def _load_endpoints(self) -> List[Dict]:
-        """Load endpoints with caching strategy."""
-
         if self._is_cache_valid():
             logger.info("Using in-memory cached endpoints")
             return self._endpoints_cache
         
-        endpoints = None
-        
-
         endpoints = self._fetch_endpoints_from_remote()
         
-
         if not endpoints:
              endpoints = self._load_cached_endpoints()
-        
-
-        if not endpoints:
-            endpoints = self._get_fallback_endpoints()
             
-        # Ensure mandatory endpoints are present
         if endpoints:
-            self._ensure_mandatory_endpoints(endpoints)
-
-
             self._save_cached_endpoints(endpoints)
             
-        self._endpoints_cache = endpoints
+        self._endpoints_cache = endpoints or []
         self._cache_timestamp = time.time()
-        return endpoints
+        return self._endpoints_cache
     
     def _sort_endpoints_by_priority(self, operation: Optional[str] = None) -> List[Dict]:
         endpoints = self.endpoints.copy()
@@ -235,19 +191,13 @@ class TidalAPIClient:
                         if isinstance(data, dict) and 'data' in data and 'version' in data:
                              data = data['data']
                         
-                        # specific check for search/track lists being empty
-
-
                         if isinstance(data, dict):
                             is_empty = False
                             
-                            # First check if we have a direct 'items' key (format 2)
                             if 'items' in data and 'limit' in data:
-                                # Direct format - check if items is empty
                                 if not data.get('items'):
                                     is_empty = True
                             else:
-                                # Nested format - check based on operation type
                                 if operation == "search_albums":
                                     albums_data = data.get('albums', {})
                                     if isinstance(albums_data, dict) and not albums_data.get('items'):
@@ -302,28 +252,17 @@ class TidalAPIClient:
         return self._make_request("/search/", {"a": query}, operation="search_artists")
 
     def search_playlists(self, query: str) -> Optional[Dict]:
-        """Search playlists by name."""
         return self._make_request("/search/", {"p": query}, operation="search_playlists")
     
     def get_track(self, track_id: int, quality: str = "LOSSLESS") -> Optional[Dict]:
-        """Get track playback info (stream URL, manifest, etc.)"""
         return self._make_request("/track/", {"id": track_id, "quality": quality}, operation="get_track")
     
     def get_track_metadata(self, track_id: int) -> Optional[Dict]:
-        """Get full track metadata (trackNumber, album, artist, cover, etc.)
-        This searches for the track and returns full metadata including:
-        - trackNumber, volumeNumber
-        - album (with cover, title, artist)
-        - artist info
-        - duration, isrc, etc.
-        """
-        # Search for this specific track to get full metadata
         result = self.search_tracks(str(track_id))
         if result and result.get('items'):
             for item in result.get('items', []):
                 if item.get('id') == track_id:
                     return item
-            # If exact match not found, return first result
             return result['items'][0] if result['items'] else None
         return None
     
@@ -331,23 +270,18 @@ class TidalAPIClient:
         return self._make_request("/album/", {"id": album_id}, operation="get_album")
     
     def get_album_tracks(self, album_id: int) -> Optional[Dict]:
-        # The /album/ endpoint returns tracks in the 'items' field
         return self._make_request("/album/", {"id": album_id}, operation="get_album_tracks")
     
     def get_artist(self, artist_id: int) -> Optional[Dict]:
         return self._make_request("/artist/", {"f": artist_id}, operation="get_artist")
 
     def get_playlist(self, playlist_id: str) -> Optional[Dict]:
-        """Get playlist metadata and items."""
         return self._make_request("/playlist/", {"id": playlist_id}, operation="get_playlist")
 
     def get_playlist_tracks(self, playlist_id: str) -> Optional[Dict]:
-        """Alias for get_playlist to keep naming consistent with album tracks."""
         return self._make_request("/playlist/", {"id": playlist_id}, operation="get_playlist_tracks")
 
     def get_artist_albums(self, artist_id: int) -> Optional[Dict]:
-        """Fetch albums directly for an artist."""
-        # Try specific endpoint for albums
         return self._make_request(f"/artist/{artist_id}/albums", operation="get_artist_albums")
     
     def get_download_status(self, track_id: int) -> Optional[Dict]:
