@@ -161,7 +161,7 @@ export function App() {
               }`}
             onClick={() => setActiveTab("weekly-jams")}
           >
-            Weekly Jams
+            Listenbrainz Playlists
           </button>
           <button
             class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${activeTab === "library"

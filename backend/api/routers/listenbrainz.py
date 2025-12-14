@@ -4,10 +4,11 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 
-from api.models import ListenBrainzGenerateRequest
+from api.models import ListenBrainzGenerateRequest, ValidateTrackRequest
 from api.auth import require_auth, require_auth_stream
 from api.state import lb_progress_queues
 from api.services.listenbrainz import listenbrainz_generate_with_progress
+from api.services.search import search_track_with_fallback
 
 router = APIRouter()
 
@@ -23,10 +24,31 @@ async def generate_listenbrainz_playlist(
         listenbrainz_generate_with_progress,
         request.username,
         request.playlist_type,
-        progress_id
+        progress_id,
+        request.should_validate
     )
     
     return {"progress_id": progress_id}
+
+@router.post("/api/listenbrainz/validate-track")
+async def validate_listenbrainz_track(
+    request: ValidateTrackRequest,
+    username: str = Depends(require_auth)
+):
+    track = request.track
+    await search_track_with_fallback(track.artist, track.title, track)
+    
+    return {
+        "title": track.title,
+        "artist": track.artist,
+        "mbid": track.mbid,
+        "tidal_id": track.tidal_id,
+        "tidal_artist_id": track.tidal_artist_id,
+        "tidal_album_id": track.tidal_album_id,
+        "tidal_exists": track.tidal_exists,
+        "album": track.album,
+        "cover": getattr(track, 'cover', None)
+    }
 
 @router.get("/api/listenbrainz/progress/{progress_id}")
 async def listenbrainz_progress_stream(

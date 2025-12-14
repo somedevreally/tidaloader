@@ -44,57 +44,71 @@ class ListenBrainzClient:
             logger.error(f"Error fetching playlists for {username}: {e}")
             raise
         except Exception as e:
-            logger.error(f"Error fetching playlists for {username}: {e}")
+            import traceback
+            logger.error(f"Error fetching playlists for {username}: {repr(e)}")
+            logger.error(traceback.format_exc())
             raise
 
-    async def get_weekly_jams(self, username: str) -> List[PlaylistTrack]:
+    async def get_playlist_by_type(self, username: str, playlist_type: str) -> List[PlaylistTrack]:
         """
-        Fetch the 'Weekly Jams' playlist for a user.
-        Returns a list of PlaylistTrack objects.
+        Fetch a specific type of playlist for a user.
+        Supported types: 'weekly-jams', 'weekly-exploration', 'year-in-review-discoveries', 'year-in-review-missed'
         """
-        logger.info(f"Fetching Weekly Jams for {username}")
+        logger.info(f"Fetching {playlist_type} for {username}")
         
         playlists = await self.get_user_playlists(username)
         
-        weekly_jams_playlist = None
+        target_playlist = None
         
+        # Define keywords for each type
+        keywords = {
+            "weekly-jams": "weekly jams",
+            "weekly-exploration": "weekly exploration", 
+            "year-in-review-discoveries": "top discoveries",
+            "year-in-review-missed": "top missed recordings"
+        }
+        
+        search_term = keywords.get(playlist_type)
+        if not search_term:
+             logger.error(f"Unknown playlist type: {playlist_type}")
+             return []
+
+        # Find the latest playlist matching the keyword
+        # Playlists are usually ordered by date descending from the API, but we'll checking carefully
         candidate_playlists = []
         for pl_wrapper in playlists:
              pl = pl_wrapper.get("playlist", {})
-             title = pl.get("title", "")
-             if "weekly jams" in title.lower():
+             title = pl.get("title", "").lower()
+             if search_term in title:
                  candidate_playlists.append(pl)
         
+        # Sort by title (usually contains date/year) to get the latest? 
+        # Actually the API returns them usually sorted, but let's just take the first one found 
+        # which is typically the latest for Weeklys. For yearly, we might want the latest year.
         if candidate_playlists:
-            weekly_jams_playlist = candidate_playlists[0]
-        else:
-            for pl_wrapper in playlists:
-                pl = pl_wrapper.get("playlist", {})
-                title = pl.get("title", "")
-                if "weekly exploration" in title.lower():
-                    weekly_jams_playlist = pl
-                    break
+            # Simple heuristic: first one is usually latest
+            target_playlist = candidate_playlists[0]
         
-        if not weekly_jams_playlist:
-            logger.warning(f"No Weekly Jams playlist found for {username}")
+        if not target_playlist:
+            logger.warning(f"No playlist found for type '{playlist_type}' for {username}")
             return []
         
-        playlist_id_url = weekly_jams_playlist.get("identifier")
+        playlist_id_url = target_playlist.get("identifier")
         if not playlist_id_url:
-            logger.error("Weekly Jams playlist found but has no identifier")
+            logger.error("Playlist found but has no identifier")
             return []
             
         uuid = playlist_id_url.split('/')[-1]
-        logger.info(f"Fetching full details for playlist {uuid}")
+        logger.info(f"Fetching full details for playlist {uuid} ({target_playlist.get('title')})")
         
         try:
             full_playlist_data = await self.get_playlist(uuid)
-            weekly_jams_playlist = full_playlist_data.get("playlist", {})
+            target_playlist = full_playlist_data.get("playlist", {})
         except Exception as e:
              logger.error(f"Failed to fetch full playlist {uuid}: {e}")
              return []
 
-        tracks_data = weekly_jams_playlist.get("track", [])
+        tracks_data = target_playlist.get("track", [])
         
         playlist_tracks = []
         for t in tracks_data:
@@ -126,5 +140,5 @@ class ListenBrainzClient:
                 album=album
             ))
             
-        logger.info(f"Found {len(playlist_tracks)} tracks in Weekly Jams for {username}")
+        logger.info(f"Found {len(playlist_tracks)} tracks in {playlist_type} for {username}")
         return playlist_tracks

@@ -23,6 +23,7 @@ async def search_track_with_fallback(artist: str, title: str, track_obj) -> bool
             track_obj.tidal_exists = True
             
             track_obj.album = album_data.get('title') if isinstance(album_data, dict) else None
+            track_obj.cover = album_data.get('cover') if isinstance(album_data, dict) else None
             
             log_success(f"Found on Tidal - ID: {track_obj.tidal_id}")
             return True
@@ -50,6 +51,7 @@ async def search_track_with_fallback(artist: str, title: str, track_obj) -> bool
                 track_obj.tidal_exists = True
                 
                 track_obj.album = album_data.get('title') if isinstance(album_data, dict) else None
+                track_obj.cover = album_data.get('cover') if isinstance(album_data, dict) else None
                 
                 log_success(f"Found via romanization - ID: {track_obj.tidal_id}")
                 return True

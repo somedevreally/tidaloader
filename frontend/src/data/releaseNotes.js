@@ -1,5 +1,17 @@
 export const releaseNotes = [
     {
+        version: "1.1.0",
+        date: "2025-12-14",
+        title: "Extended ListenBrainz Integration",
+        changes: [
+            "Renamed 'Weekly Jams' tab to 'Listenbrainz Playlists' to reflect broader support.",
+            "Added support for 'Weekly Exploration' and 'Year in Review' (Discoveries & Missed) playlists.",
+            "Implemented a new 'Fetch then Check' workflow: Fetch playlists instantly and validate tracks on demand.",
+            "Overhauled the UI with album art display, better status indicators, and selective download queuing.",
+            "Added 'Check All' functionality to batch validate playlist tracks against Tidal."
+        ]
+    },
+    {
         version: "1.0.4",
         date: "2025-12-14",
         title: "Download Manager Authentication Fix",

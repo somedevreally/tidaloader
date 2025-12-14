@@ -151,10 +151,20 @@ class ApiClient {
   /**
    * Generate ListenBrainz playlist
    */
-  generateListenBrainzPlaylist(username, playlistType = "periodic-jams") {
+  generateListenBrainzPlaylist(username, playlistType = "periodic-jams", shouldValidate = true) {
     return this.post("/listenbrainz/generate", {
       username,
       playlist_type: playlistType,
+      should_validate: shouldValidate,
+    });
+  }
+
+  /**
+   * Validate a single ListenBrainz track
+   */
+  validateListenBrainzTrack(track) {
+    return this.post("/listenbrainz/validate-track", {
+      track: track
     });
   }
 
