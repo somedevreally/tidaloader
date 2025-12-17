@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     music_dir: str = str(Path.home() / "music")
     auth_username: Optional[str] = None
     auth_password: Optional[str] = None
+    sync_time: str = "04:00"
     
     class Config:
         env_file = Path(__file__).parent.parent.parent / ".env"
@@ -19,6 +20,9 @@ settings = Settings()
 
 DOWNLOAD_DIR = Path(settings.music_dir)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+PLAYLISTS_DIR = DOWNLOAD_DIR / "tidaloader_playlists"
+PLAYLISTS_DIR.mkdir(parents=True, exist_ok=True)
 
 MP3_QUALITY_MAP = {
     "MP3_128": 128,

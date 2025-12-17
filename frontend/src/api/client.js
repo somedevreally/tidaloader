@@ -75,7 +75,12 @@ class ApiClient {
       const error = await response
         .json()
         .catch(() => ({ detail: response.statusText }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+
+      let errorMessage = error.detail || `HTTP ${response.status}`;
+      if (typeof errorMessage === 'object') {
+        errorMessage = JSON.stringify(errorMessage);
+      }
+      throw new Error(errorMessage);
     }
     return response.json();
   }
@@ -304,6 +309,52 @@ class ApiClient {
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
     return response.json();
+  }
+
+  /**
+   * Make DELETE request
+   */
+  async delete(path) {
+    const response = await fetch(API_BASE + path, {
+      method: "DELETE",
+      headers: this.getHeaders(),
+      credentials: "include",
+    });
+
+    if (response.status === 401) {
+      useAuthStore.getState().clearCredentials();
+      throw new Error("Authentication required");
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      let errorMessage = error.detail || `HTTP ${response.status}`;
+      if (typeof errorMessage === 'object') {
+        errorMessage = JSON.stringify(errorMessage);
+      }
+      throw new Error(errorMessage);
+    }
+    return response.json();
+  }
+
+  // ============================================================================
+  // PLAYLISTS API METHODS
+  // ============================================================================
+
+  getMonitoredPlaylists() {
+    return this.get("/playlists/monitored");
+  }
+
+  monitorPlaylist(uuid, name, frequency, quality) {
+    return this.post("/playlists/monitor", { uuid, name, frequency, quality });
+  }
+
+  removeMonitoredPlaylist(uuid) {
+    return this.delete(`/playlists/${uuid}`);
+  }
+
+  syncPlaylist(uuid) {
+    return this.post(`/playlists/${uuid}/sync`);
   }
 
   // ============================================================================

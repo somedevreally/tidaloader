@@ -1,4 +1,5 @@
 import { h } from "preact";
+import { useEffect } from "preact/hooks";
 import { useDownloadStore } from "../stores/downloadStore";
 
 const QUALITY_OPTIONS = [
@@ -37,6 +38,14 @@ export function SettingsPanel() {
 
     const embedLyrics = useDownloadStore((state) => state.embedLyrics);
     const setEmbedLyrics = useDownloadStore((state) => state.setEmbedLyrics);
+
+    const serverQueueSettings = useDownloadStore((state) => state.serverQueueSettings);
+    const fetchServerSettings = useDownloadStore((state) => state.fetchServerSettings);
+    const updateServerSettings = useDownloadStore((state) => state.updateServerSettings);
+
+    useEffect(() => {
+        fetchServerSettings();
+    }, []);
 
     return (
         <div class="space-y-6">
@@ -148,6 +157,19 @@ export function SettingsPanel() {
                         <div class="w-11 h-6 bg-surface peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                 </div>
+            </div>
+
+            <div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-alt transition-colors">
+                <div class="space-y-0.5">
+                    <label class="text-sm font-semibold text-text">Tidal Playlists Update Time</label>
+                    <p class="text-xs text-text-muted">Time to check for updates (Daily/Weekly/Monthly)</p>
+                </div>
+                <input
+                    type="time"
+                    value={serverQueueSettings.sync_time || "04:00"}
+                    onChange={(e) => updateServerSettings({ sync_time: e.target.value })}
+                    class="input-field w-32"
+                />
             </div>
         </div>
     );

@@ -9,15 +9,21 @@ from dotenv import load_dotenv
 # Load env before imports that might need it
 load_dotenv()
 
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 # Fix path to include backend root
 sys.path.append(str(Path(__file__).parent.parent))
 
-from api.routers import system, listenbrainz, search, downloads, library
+from api.routers import system, listenbrainz, search, downloads, library, playlists
 from api.clients import tidal_client
 from api.utils.logging import log_warning, log_info
 from download_state import download_state_manager
+from scheduler import PlaylistScheduler
 from queue_manager import queue_manager, QUEUE_AUTO_PROCESS
-
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -33,10 +39,15 @@ async def lifespan(app: FastAPI):
         import asyncio
         asyncio.create_task(queue_manager.start_processing())
         log_info("Queue auto-processing started")
+        
+    # Start Playlist Scheduler
+    scheduler = PlaylistScheduler()
+    scheduler.start()
     
     yield
     # Shutdown
     await queue_manager.stop_processing()
+    scheduler.shutdown()
 
 app = FastAPI(title="Tidaloader API", lifespan=lifespan)
 
@@ -54,6 +65,7 @@ app.include_router(listenbrainz.router)
 app.include_router(search.router)
 app.include_router(downloads.router)
 app.include_router(library.router)
+app.include_router(playlists.router)
 
 # Frontend Serving
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"

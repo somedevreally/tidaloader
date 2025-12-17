@@ -19,52 +19,59 @@ def sanitize_path_component(name: str) -> str:
     
     return name or "Unknown"
 
+
+def get_output_relative_path(metadata: dict, template: str = "{Artist}/{Album}/{TrackNumber} - {Title}", group_compilations: bool = True) -> str:
+    """Calculate the relative output path based on metadata and template"""
+    artist = metadata.get('album_artist') or metadata.get('artist', 'Unknown Artist')
+    album = metadata.get('album', 'Unknown Album')
+    title = metadata.get('title', 'Unknown Title')
+    track_number = metadata.get('track_number')
+    file_ext = metadata.get('file_ext') or '.flac'
+    
+    if not file_ext.startswith('.'):
+        file_ext = f".{file_ext}"
+    
+    s_artist = sanitize_path_component(artist)
+    s_album = sanitize_path_component(album)
+    s_title = sanitize_path_component(title)
+    
+    is_compilation = artist.lower() in ['various artists', 'various'] or metadata.get('compilation')
+    
+    track_str = str(track_number).zfill(2) if track_number else "00"
+    
+    template_artist = s_artist
+    template_album = s_album
+    
+    if group_compilations and is_compilation:
+        template_artist = "Compilations"
+        if not template_album.startswith("VA - "):
+            template_album = f"VA - {template_album}"
+
+    template_vars = {
+        "Artist": template_artist,
+        "AlbumArtist": s_artist,
+        "TrackArtist": sanitize_path_component(metadata.get('artist', artist)),
+        "Album": template_album,
+        "Title": s_title,
+        "TrackNumber": track_str,
+        "Year": str(metadata.get('date', '')).split('-')[0] if metadata.get('date') else "Unknown Year"
+    }
+    
+    try:
+        clean_template = template.lstrip('/')
+        relative_path_str = clean_template.format(**template_vars)
+    except KeyError as e:
+        log_warning(f"Invalid template key: {e}. Falling back to default.")
+        relative_path_str = f"{s_artist}/{s_album}/{track_str} - {s_title}"
+        
+    if not relative_path_str.endswith(file_ext):
+        relative_path_str += file_ext
+        
+    return relative_path_str
+
 async def organize_file_by_metadata(temp_filepath: Path, metadata: dict, template: str = "{Artist}/{Album}/{TrackNumber} - {Title}", group_compilations: bool = True) -> Path:
     try:
-        artist = metadata.get('album_artist') or metadata.get('artist', 'Unknown Artist')
-        album = metadata.get('album', 'Unknown Album')
-        title = metadata.get('title', temp_filepath.stem)
-        track_number = metadata.get('track_number')
-        file_ext = metadata.get('file_ext')
-        if not file_ext:
-            file_ext = temp_filepath.suffix or '.flac'
-        file_ext = file_ext if file_ext.startswith('.') else f".{file_ext}"
-        
-        s_artist = sanitize_path_component(artist)
-        s_album = sanitize_path_component(album)
-        s_title = sanitize_path_component(title)
-        
-        is_compilation = artist.lower() in ['various artists', 'various'] or metadata.get('compilation')
-        
-        track_str = str(track_number).zfill(2) if track_number else "00"
-        
-        template_artist = s_artist
-        template_album = s_album
-        
-        if group_compilations and is_compilation:
-            template_artist = "Compilations"
-            if not template_album.startswith("VA - "):
-                template_album = f"VA - {template_album}"
-
-        template_vars = {
-            "Artist": template_artist,
-            "AlbumArtist": s_artist,
-            "TrackArtist": sanitize_path_component(metadata.get('artist', artist)),
-            "Album": template_album,
-            "Title": s_title,
-            "TrackNumber": track_str,
-            "Year": str(metadata.get('date', '')).split('-')[0] if metadata.get('date') else "Unknown Year"
-        }
-        
-        try:
-            clean_template = template.lstrip('/')
-            relative_path_str = clean_template.format(**template_vars)
-        except KeyError as e:
-            log_warning(f"Invalid template key: {e}. Falling back to default.")
-            relative_path_str = f"{s_artist}/{s_album}/{track_str} - {s_title}"
-            
-        if not relative_path_str.endswith(file_ext):
-            relative_path_str += file_ext
+        relative_path_str = get_output_relative_path(metadata, template, group_compilations)
             
         final_path = DOWNLOAD_DIR / relative_path_str
         final_dir = final_path.parent

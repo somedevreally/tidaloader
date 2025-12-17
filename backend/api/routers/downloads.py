@@ -655,16 +655,30 @@ async def process_queue_item(item: QueueItem):
         title = metadata.get('title', item.title)
         track_number = metadata.get('track_number')
         
-        artist_folder = sanitize_path_component(artist)
-        album_folder = sanitize_path_component(album)
+        # Use shared logic for consistent path resolution
+        from api.services.files import get_output_relative_path as calc_rel_path
         
-        if track_number:
-            track_str = str(track_number).zfill(2)
-            final_filename = f"{track_str} - {sanitize_path_component(title)}{final_ext}"
-        else:
-            final_filename = f"{sanitize_path_component(title)}{final_ext}"
+        # We need to construct a metadata dict for get_output_relative_path
+        path_metadata = {
+            'artist': artist,
+            'album': album,
+            'title': title,
+            'track_number': track_number,
+            'album_artist': metadata.get('album_artist'),
+            'compilation': metadata.get('compilation'),
+            'file_ext': final_ext,
+            'date': metadata.get('date')
+        }
         
-        final_filepath = DOWNLOAD_DIR / artist_folder / album_folder / final_filename
+        rel_path = calc_rel_path(
+            path_metadata, 
+            template=item.organization_template, 
+            group_compilations=item.group_compilations
+        )
+        final_filepath = DOWNLOAD_DIR / rel_path
+        final_filename = final_filepath.name
+        
+        log_info(f"[Queue] Calculated target path: {rel_path}")
         
         # Check if file already exists
         if final_filepath.exists():

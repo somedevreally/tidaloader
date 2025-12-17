@@ -15,6 +15,7 @@ import { ThemePicker } from "./components/ThemePicker";
 
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { NyanCatEasterEgg } from "./components/NyanCatEasterEgg";
+import { TidalPlaylists } from "./components/TidalPlaylists";
 import { releaseNotes } from "./data/releaseNotes";
 import { useEffect } from "preact/hooks";
 
@@ -164,6 +165,15 @@ export function App() {
             Listenbrainz Playlists
           </button>
           <button
+            class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${activeTab === "playlists"
+              ? "bg-surface text-primary border-b-2 border-primary -mb-px"
+              : "text-text-muted hover:text-text hover:bg-surface-alt"
+              }`}
+            onClick={() => setActiveTab("playlists")}
+          >
+            Tidal Playlists
+          </button>
+          <button
             class={`px-6 py-3 font-medium rounded-t-lg transition-all duration-200 ${activeTab === "library"
               ? "bg-surface text-primary border-b-2 border-primary -mb-px"
               : "text-text-muted hover:text-text hover:bg-surface-alt"
@@ -177,6 +187,7 @@ export function App() {
         <main class="card p-6 mb-6 min-h-[400px]">
           {activeTab === "search" && <SearchBar />}
           {activeTab === "weekly-jams" && <WeeklyJamsGenerator />}
+          {activeTab === "playlists" && <TidalPlaylists />}
           {activeTab === "library" && <LibraryPage />}
         </main>
       </div>

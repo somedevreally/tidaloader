@@ -59,6 +59,7 @@ class QueueItem:
     embed_lyrics: bool = False
     organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
     group_compilations: bool = True
+    auto_clean: bool = False
     
     def __post_init__(self):
         if not self.added_at:
@@ -297,15 +298,21 @@ class QueueManager:
         """Mark a download as completed"""
         if track_id in self._active:
             item = self._active[track_id].get('item')
-            self._completed.append({
-                'track_id': track_id,
-                'title': item.title if item else '',
-                'artist': item.artist if item else '',
-                'album': item.album if item else '',
-                'filename': filename,
-                'completed_at': datetime.now().isoformat(),
-                'metadata': metadata or {}
-            })
+            
+            # Skip history if auto_clean is enabled
+            if item and item.auto_clean:
+                log_info(f"Auto-cleaning completed item: {item.title}")
+            else:
+                self._completed.append({
+                    'track_id': track_id,
+                    'title': item.title if item else '',
+                    'artist': item.artist if item else '',
+                    'album': item.album if item else '',
+                    'filename': filename,
+                    'completed_at': datetime.now().isoformat(),
+                    'metadata': metadata or {}
+                })
+            
             del self._active[track_id]
             self._save_state()
     

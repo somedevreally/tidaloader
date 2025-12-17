@@ -20,6 +20,7 @@ export const useDownloadStore = create(
         max_concurrent: 3,
         auto_process: true,
         is_processing: false,
+        sync_hour: 4,
       },
 
       // Flag to indicate if we're using server queue
@@ -142,6 +143,43 @@ export const useDownloadStore = create(
       clearFailed: () => set({ failed: [] }),
 
       clearQueue: () => set({ queue: [] }),
+
+      fetchServerSettings: async () => {
+        try {
+          const res = await fetch('/api/system/settings').then(r => r.json());
+          if (res.sync_time !== undefined) {
+            set((state) => ({
+              serverQueueSettings: {
+                ...state.serverQueueSettings,
+                sync_time: res.sync_time
+              }
+            }));
+          }
+        } catch (e) {
+          console.error("Failed to fetch system settings", e);
+        }
+      },
+
+      updateServerSettings: async (settings) => {
+        try {
+          if (settings.sync_time !== undefined) {
+            await fetch('/api/system/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sync_time: settings.sync_time })
+            });
+            // Optimistic update
+            set((state) => ({
+              serverQueueSettings: {
+                ...state.serverQueueSettings,
+                sync_time: settings.sync_time
+              }
+            }));
+          }
+        } catch (e) {
+          console.error("Failed to update system settings", e);
+        }
+      },
 
       retryAllFailed: () =>
         set((state) => {
