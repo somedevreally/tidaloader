@@ -331,7 +331,7 @@ class PlaylistManager:
             
         # 5. Download playlist cover (for Media Servers)
         try:
-           await self._ensure_playlist_cover(playlist, playlist_folder)
+           await self._ensure_playlist_cover(playlist, playlist_folder, safe_name)
         except Exception as e:
            logger.warning(f"Failed to ensure playlist cover: {e}")
 
@@ -342,10 +342,10 @@ class PlaylistManager:
         
         return {'status': 'success', 'queued': queued_count, 'total_tracks': len(raw_items)}
 
-    async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist, folder_path: Path):
-        """Downloads the playlist cover image to {PlaylistFolder}/folder.jpg if missing"""
-        # Target filename: folder.jpg (Standard for Jellyfin/Kodi etc)
-        cover_path = folder_path / "folder.jpg"
+    async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist, folder_path: Path, safe_name: str):
+        """Downloads the playlist cover image to {PlaylistFolder}/{safe_name}.jpg if missing"""
+        # Target filename: {safe_name}.jpg (Same basename as m3u8)
+        cover_path = folder_path / f"{safe_name}.jpg"
         
         if cover_path.exists():
             return
