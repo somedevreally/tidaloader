@@ -2,6 +2,7 @@
 import json
 import logging
 import asyncio
+import aiohttp
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime
@@ -110,16 +111,22 @@ class PlaylistManager:
         self._playlists = [p for p in self._playlists if p.uuid != uuid]
         self._save_state()
         
-        # Delete m3u8 file
+        # Delete m3u8 file and cover
         try:
             file_path = PLAYLISTS_DIR / playlist.path
+            base_name = str(Path(playlist.path).stem)
+            cover_path = PLAYLISTS_DIR / f"{base_name}.jpg"
+            
             if file_path.exists():
                 file_path.unlink()
                 logger.info(f"Deleted playlist file: {file_path}")
-            else:
-                logger.warning(f"Playlist file not found for deletion: {file_path}")
+            
+            if cover_path.exists():
+                cover_path.unlink()
+                logger.info(f"Deleted playlist cover: {cover_path}")
+                
         except Exception as e:
-            logger.error(f"Failed to delete playlist file {playlist.path}: {e}")
+            logger.error(f"Failed to delete playlist file/cover: {e}")
 
     async def sync_playlist(self, uuid: str) -> Dict[str, Any]:
         playlist = self.get_playlist(uuid)
@@ -297,11 +304,52 @@ class PlaylistManager:
         except Exception as e:
             logger.error(f"Failed to write M3U8: {e}")
             
+        # 5. Download playlist cover (for Media Servers)
+        try:
+           await self._ensure_playlist_cover(playlist)
+        except Exception as e:
+           logger.warning(f"Failed to ensure playlist cover: {e}")
+
         # Update last sync
         playlist.last_sync = datetime.now().isoformat()
         playlist.track_count = len(raw_items)
         self._save_state()
         
-        return {'status': 'success', 'queued': queued_count, 'total_tracks': len(tracks)}
+        return {'status': 'success', 'queued': queued_count, 'total_tracks': len(raw_items)}
+
+    async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist):
+        """Downloads the playlist cover image to {PlaylistName}.jpg if missing"""
+        base_name = str(Path(playlist.path).stem)
+        cover_filename = f"{base_name}.jpg"
+        cover_path = PLAYLISTS_DIR / cover_filename
+        
+        if cover_path.exists():
+            return
+            
+        logger.info(f"Downloading cover for playlist {playlist.name}...")
+        
+        try:
+            pl_info = tidal_client.get_playlist(playlist.uuid)
+            if not pl_info:
+                return
+                
+            image_guid = pl_info.get('image') or pl_info.get('squareImage')
+            if not image_guid:
+                return
+                
+            # Construct URL (Tidal Resource URL)
+            image_url = f"https://resources.tidal.com/images/{image_guid}/750x750.jpg"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as resp:
+                    if resp.status == 200:
+                        async with aiofiles.open(cover_path, 'wb') as f:
+                            await f.write(await resp.read())
+                        logger.info(f"Cover saved: {cover_path}")
+                    else:
+                        logger.warning(f"Failed cover download: {resp.status}")
+                        
+        except Exception as e:
+            logger.error(f"Error downloading cover: {e}")
 
 playlist_manager = PlaylistManager()
