@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     auth_username: Optional[str] = None
     auth_password: Optional[str] = None
     sync_time: str = "04:00"
+    organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
+    group_compilations: bool = True
+    active_downloads: int = 3
+    
+    # Feature toggles
+    run_beets: bool = False
+    embed_lyrics: bool = False
     
     class Config:
         env_file = Path(__file__).parent.parent.parent / ".env"

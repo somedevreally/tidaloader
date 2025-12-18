@@ -1,3 +1,4 @@
+
 import json
 import logging
 import asyncio
@@ -7,9 +8,10 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 import aiofiles
 
-from api.settings import PLAYLISTS_DIR, DOWNLOAD_DIR
+from api.settings import settings, DOWNLOAD_DIR, PLAYLISTS_DIR
 from api.clients import tidal_client
 from api.services.files import get_output_relative_path
+from api.utils.logging import log_info, log_error, log_warning
 from queue_manager import queue_manager, QueueItem
 
 logger = logging.getLogger(__name__)
@@ -100,10 +102,24 @@ class PlaylistManager:
         return playlist, True
 
     def remove_monitored_playlist(self, uuid: str):
+        playlist = self.get_playlist(uuid)
+        if not playlist:
+            logger.warning(f"Attempted to remove non-existent playlist {uuid}")
+            return
+            
         self._playlists = [p for p in self._playlists if p.uuid != uuid]
         self._save_state()
-        # Note: We do not delete the physical m3u8 file automatically to be safe, or maybe we should?
-        # User might want to keep it. Let's keep it.
+        
+        # Delete m3u8 file
+        try:
+            file_path = PLAYLISTS_DIR / playlist.path
+            if file_path.exists():
+                file_path.unlink()
+                logger.info(f"Deleted playlist file: {file_path}")
+            else:
+                logger.warning(f"Playlist file not found for deletion: {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete playlist file {playlist.path}: {e}")
 
     async def sync_playlist(self, uuid: str) -> Dict[str, Any]:
         playlist = self.get_playlist(uuid)
@@ -235,12 +251,17 @@ class PlaylistManager:
                         artist=artist_name,
                         album=album_name,
                         album_artist=album_artist,
+                        track_number=track_num,
                         cover=album_data.get('cover') if album_data else (track.get('cover') if isinstance(track.get('cover'), str) else None),
                         quality=playlist.quality,
                         tidal_track_id=str(item_id),
                         tidal_artist_id=str(artist_data.get('id')) if artist_data.get('id') else None,
                         tidal_album_id=str(album_data.get('id')) if album_data.get('id') else None,
-                        auto_clean=True
+                        auto_clean=True,
+                        organization_template=settings.organization_template,
+                        group_compilations=settings.group_compilations,
+                        run_beets=settings.run_beets,
+                        embed_lyrics=settings.embed_lyrics
                     ))
                     
                     target_ext = '.flac'

@@ -147,14 +147,19 @@ export const useDownloadStore = create(
       fetchServerSettings: async () => {
         try {
           const res = await fetch('/api/system/settings').then(r => r.json());
-          if (res.sync_time !== undefined) {
-            set((state) => ({
-              serverQueueSettings: {
-                ...state.serverQueueSettings,
-                sync_time: res.sync_time
-              }
-            }));
-          }
+
+          set((state) => ({
+            organizationTemplate: res.organization_template !== undefined ? res.organization_template : state.organizationTemplate,
+            groupCompilations: res.group_compilations !== undefined ? res.group_compilations : state.groupCompilations,
+            maxConcurrent: res.active_downloads !== undefined ? res.active_downloads : state.maxConcurrent,
+            runBeets: res.run_beets !== undefined ? res.run_beets : state.runBeets,
+            embedLyrics: res.embed_lyrics !== undefined ? res.embed_lyrics : state.embedLyrics,
+
+            serverQueueSettings: {
+              ...state.serverQueueSettings,
+              sync_time: res.sync_time !== undefined ? res.sync_time : state.serverQueueSettings.sync_time
+            }
+          }));
         } catch (e) {
           console.error("Failed to fetch system settings", e);
         }
@@ -196,10 +201,47 @@ export const useDownloadStore = create(
         }),
 
       setQuality: (quality) => set({ quality }),
-      setOrganizationTemplate: (template) => set({ organizationTemplate: template }),
-      setGroupCompilations: (enabled) => set({ groupCompilations: enabled }),
-      setRunBeets: (enabled) => set({ runBeets: enabled }),
-      setEmbedLyrics: (enabled) => set({ embedLyrics: enabled }),
+
+      setOrganizationTemplate: (template) => {
+        set({ organizationTemplate: template });
+        get().saveSettingsToServer();
+      },
+      setGroupCompilations: (enabled) => {
+        set({ groupCompilations: enabled });
+        get().saveSettingsToServer();
+      },
+      setRunBeets: (enabled) => {
+        set({ runBeets: enabled });
+        get().saveSettingsToServer();
+      },
+      setEmbedLyrics: (enabled) => {
+        set({ embedLyrics: enabled });
+        get().saveSettingsToServer();
+      },
+      setMaxConcurrent: (val) => {
+        set({ maxConcurrent: val });
+        get().saveSettingsToServer();
+      },
+
+      saveSettingsToServer: async () => {
+        const s = get();
+        try {
+          await fetch('/api/system/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sync_time: s.serverQueueSettings.sync_time,
+              organization_template: s.organizationTemplate,
+              group_compilations: s.groupCompilations,
+              active_downloads: s.maxConcurrent,
+              run_beets: s.runBeets,
+              embed_lyrics: s.embedLyrics
+            })
+          });
+        } catch (e) {
+          console.error("Failed to save settings", e);
+        }
+      },
 
       // Server queue state sync methods
       setServerQueueState: ({ queue, downloading, completed, failed }) =>
