@@ -331,10 +331,22 @@ class PlaylistManager:
         try:
             pl_info = tidal_client.get_playlist(playlist.uuid)
             if not pl_info:
+                logger.warning(f"No playlist info returned for {playlist.name}")
                 return
+            
+            # Unwrap response if needed
+            if 'data' in pl_info:
+                pl_info = pl_info['data']
+                
+            # Sometimes it's nested in 'item' or 'playlist'
+            if 'item' in pl_info:
+                pl_info = pl_info['item']
+            elif 'playlist' in pl_info:
+                pl_info = pl_info['playlist']
                 
             image_guid = pl_info.get('image') or pl_info.get('squareImage')
             if not image_guid:
+                logger.warning(f"No image GUID found in playlist info keys: {list(pl_info.keys())}")
                 return
                 
             # Construct URL (Tidal Resource URL)
@@ -347,7 +359,7 @@ class PlaylistManager:
                             await f.write(await resp.read())
                         logger.info(f"Cover saved: {cover_path}")
                     else:
-                        logger.warning(f"Failed cover download: {resp.status}")
+                        logger.warning(f"Failed cover download: {resp.status} from {image_url}")
                         
         except Exception as e:
             logger.error(f"Error downloading cover: {e}")
