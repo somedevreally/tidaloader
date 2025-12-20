@@ -1,9 +1,14 @@
 import asyncio
 import logging
+import aiofiles
+from pathlib import Path
+from typing import List, Dict, Any
 from api.state import lb_progress_queues
 from api.utils.logging import log_info, log_error, log_success
 from api.utils.text import fix_unicode
 from api.services.search import search_track_with_fallback
+from api.services.files import get_output_relative_path, sanitize_path_component
+from api.settings import DOWNLOAD_DIR, PLAYLISTS_DIR
 from api.clients.spotify import SpotifyClient
 
 logger = logging.getLogger(__name__)
@@ -124,3 +129,105 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
     finally:
         await client.close()
         await queue.put(None) # Signal end of stream
+
+
+async def generate_spotify_m3u8(playlist_name: str, tracks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Generate an m3u8 playlist file from validated Spotify tracks.
+    Only includes tracks that:
+    1. Have tidal_exists = True (validated on Tidal)
+    2. Actually exist as downloaded files on disk
+    
+    Returns info about the generated playlist.
+    """
+    if not playlist_name or not playlist_name.strip():
+        raise ValueError("Playlist name is required")
+    
+    if not tracks:
+        raise ValueError("No tracks provided")
+    
+    # Filter to only tracks that exist on Tidal
+    valid_tracks = [t for t in tracks if t.get('tidal_exists') and t.get('tidal_id')]
+    
+    if not valid_tracks:
+        raise ValueError("No validated tracks found. Please check tracks on Tidal first.")
+    
+    logger.info(f"Generating m3u8 for '{playlist_name}' with {len(valid_tracks)}/{len(tracks)} validated tracks")
+    
+    # Sanitize playlist name for folder/file
+    safe_name = sanitize_path_component(playlist_name.strip())
+    
+    # Create playlist folder structure (same as Tidal playlists)
+    playlist_folder = PLAYLISTS_DIR / safe_name
+    playlist_folder.mkdir(parents=True, exist_ok=True)
+    
+    m3u8_filename = f"{safe_name}.m3u8"
+    playlist_file = playlist_folder / m3u8_filename
+    
+    # Build m3u8 content
+    m3u8_lines = ["#EXTM3U"]
+    included_count = 0
+    skipped_count = 0
+    
+    for track in valid_tracks:
+        title = track.get('title', 'Unknown Title')
+        artist = track.get('artist', 'Unknown Artist')
+        album = track.get('album', 'Unknown Album')
+        
+        # Build metadata to find the file path
+        metadata = {
+            'artist': artist,
+            'album': album,
+            'title': title,
+            'track_number': None,  # We don't have this from Spotify data
+            'album_artist': None,
+            'compilation': False
+        }
+        
+        found_rel_path = None
+        
+        # Check for existing files in various formats
+        for ext in ['.flac', '.m4a', '.mp3', '.opus']:
+            metadata['file_ext'] = ext
+            rel_path = get_output_relative_path(metadata)
+            full_path = DOWNLOAD_DIR / rel_path
+            
+            if full_path.exists():
+                found_rel_path = rel_path
+                logger.debug(f"Found file: {rel_path}")
+                break
+        
+        if found_rel_path:
+            # Duration is optional (we might not have it)
+            duration = track.get('duration_ms', -1000) // 1000 if track.get('duration_ms') else -1
+            m3u8_lines.append(f"#EXTINF:{duration},{artist} - {title}")
+            # Use ../../ because m3u8 is in tidaloader_playlists/{PlaylistName}/
+            m3u8_lines.append(f"../../{found_rel_path}")
+            included_count += 1
+        else:
+            # File not downloaded yet - skip it
+            logger.debug(f"File not found for: {artist} - {title}")
+            skipped_count += 1
+    
+    if included_count == 0:
+        raise ValueError("No downloaded tracks found. Please download tracks first before generating the playlist.")
+    
+    # Write the m3u8 file
+    try:
+        async with aiofiles.open(playlist_file, 'w', encoding='utf-8') as f:
+            await f.write("\n".join(m3u8_lines))
+        
+        log_success(f"M3U8 written to {playlist_file} with {included_count} tracks")
+        
+        return {
+            "status": "success",
+            "message": f"Playlist '{playlist_name}' created with {included_count} tracks",
+            "path": str(playlist_file.relative_to(PLAYLISTS_DIR)),
+            "included_count": included_count,
+            "skipped_count": skipped_count,
+            "total_validated": len(valid_tracks)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to write m3u8: {e}")
+        raise

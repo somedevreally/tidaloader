@@ -2,15 +2,18 @@ import uuid
 import json
 import asyncio
 import re
+import logging
+from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from api.models import SpotifyGenerateRequest
+from api.models import SpotifyGenerateRequest, SpotifyM3U8Request
 from api.auth import require_auth, require_auth_stream
 from api.state import lb_progress_queues
-from api.services.spotify import process_spotify_playlist
+from api.services.spotify import process_spotify_playlist, generate_spotify_m3u8
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 def extract_spotify_id(url: str) -> str:
     # Match playlist ID from various formats
@@ -88,3 +91,25 @@ async def spotify_progress_stream(
             "Content-Type": "text/event-stream; charset=utf-8"
         }
     )
+
+
+@router.post("/api/spotify/generate-m3u8")
+async def create_spotify_m3u8(
+    request: SpotifyM3U8Request,
+    username: str = Depends(require_auth)
+):
+    """
+    Generate an m3u8 playlist file from validated Spotify tracks.
+    Only includes tracks that have been validated and exist on Tidal.
+    """
+    try:
+        result = await generate_spotify_m3u8(
+            playlist_name=request.playlist_name,
+            tracks=request.tracks
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to generate m3u8: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate playlist: {str(e)}")

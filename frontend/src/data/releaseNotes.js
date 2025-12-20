@@ -1,5 +1,15 @@
 export const releaseNotes = [
     {
+        version: "1.2.5",
+        date: "2025-12-20",
+        title: "Spotify M3U8 Playlist Generation",
+        changes: [
+            "Added M3U8 playlist generation for Spotify imports - compatible with Navidrome/Jellyfin.",
+            "M3U8 only includes validated tracks that have been downloaded, ensuring accuracy.",
+            "Added playlist name input field for custom naming of generated playlists."
+        ]
+    },
+    {
         version: "1.2.4",
         date: "2025-12-20",
         title: "Spotify 100-Track Limit Bypass",

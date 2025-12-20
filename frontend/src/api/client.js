@@ -224,6 +224,16 @@ class ApiClient {
     }
 
     /**
+     * Generate m3u8 playlist file from validated Spotify tracks
+     */
+    generateSpotifyM3U8(playlistName, tracks) {
+        return this.post("/spotify/generate-m3u8", {
+            playlist_name: playlistName,
+            tracks: tracks
+        });
+    }
+
+    /**
      * Create Server-Sent Events stream for download progress
      */
     createProgressStream(trackId) {

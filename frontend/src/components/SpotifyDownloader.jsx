@@ -28,12 +28,14 @@ const ModernCheckbox = ({ checked, onChange, disabled }) => (
 
 export function SpotifyDownloader() {
     const [playlistUrl, setPlaylistUrl] = useState("");
+    const [playlistName, setPlaylistName] = useState("");
     const [loading, setLoading] = useState(false);
     const [tracks, setTracks] = useState([]);
     const [selected, setSelected] = useState(new Set()); // Set of indices (numbers)
     const [error, setError] = useState(null);
     const [progressLogs, setProgressLogs] = useState([]);
     const logsEndRef = useRef(null);
+    const [generatingM3U8, setGeneratingM3U8] = useState(false);
 
     // Track status map: { idx: 'idle' | 'validating' | 'success' | 'error' }
     const [trackStatuses, setTrackStatuses] = useState({});
@@ -233,6 +235,30 @@ export function SpotifyDownloader() {
         });
     };
 
+    const handleGenerateM3U8 = async () => {
+        const validatedTracks = tracks.filter(t => t.tidal_exists && t.tidal_id);
+        
+        if (validatedTracks.length === 0) {
+            addToast("No validated tracks found. Please check tracks on Tidal first.", "error");
+            return;
+        }
+
+        if (!playlistName.trim()) {
+            addToast("Please enter a playlist name", "error");
+            return;
+        }
+
+        setGeneratingM3U8(true);
+        try {
+            const result = await api.generateSpotifyM3U8(playlistName.trim(), validatedTracks);
+            addToast(`Playlist created: ${result.included_count} tracks included, ${result.skipped_count} not yet downloaded`, "success");
+        } catch (e) {
+            addToast(`Failed to generate playlist: ${e.message}`, "error");
+        } finally {
+            setGeneratingM3U8(false);
+        }
+    };
+
     return (
         <div class="space-y-6">
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -317,6 +343,45 @@ export function SpotifyDownloader() {
 
             {tracks.length > 0 && (
                 <div class="space-y-4 animate-fadeIn">
+                    {/* Playlist Name & M3U8 Generation */}
+                    <div class="p-4 bg-surface-alt/50 border border-border-light rounded-lg">
+                        <div class="flex flex-col sm:flex-row sm:items-end gap-3">
+                            <div class="flex-1">
+                                <label class="block text-xs font-semibold text-text-muted mb-1.5 uppercase tracking-wider">
+                                    Playlist Name (for M3U8)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={playlistName}
+                                    onInput={(e) => setPlaylistName(e.target.value)}
+                                    placeholder="My Spotify Playlist"
+                                    class="input-field w-full h-[38px]"
+                                />
+                            </div>
+                            <button
+                                onClick={handleGenerateM3U8}
+                                disabled={generatingM3U8 || !playlistName.trim() || tracks.filter(t => t.tidal_exists).length === 0}
+                                class="btn-surface h-[38px] px-4 text-sm flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
+                                title="Generate M3U8 playlist for Navidrome/Jellyfin"
+                            >
+                                {generatingM3U8 ? (
+                                    <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                                    </svg>
+                                )}
+                                Generate M3U8
+                            </button>
+                        </div>
+                        <p class="text-xs text-text-muted mt-2">
+                            Only validated tracks that are already downloaded will be included in the playlist.
+                        </p>
+                    </div>
+
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-border-light">
                         <div class="flex items-center gap-3">
                             <h3 class="text-lg font-bold text-text">

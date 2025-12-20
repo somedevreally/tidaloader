@@ -24,6 +24,11 @@ class SpotifyGenerateRequest(BaseModel):
     playlist_url: str
     should_validate: bool = False
 
+class SpotifyM3U8Request(BaseModel):
+    """Request to generate an m3u8 file from validated Spotify tracks"""
+    playlist_name: str
+    tracks: list  # List of track dicts with tidal_id, title, artist, album, etc.
+
 class ValidateTrackRequest(BaseModel):
     track: PlaylistTrack
 
