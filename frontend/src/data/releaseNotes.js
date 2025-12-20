@@ -1,5 +1,15 @@
 export const releaseNotes = [
     {
+        version: "1.2.4",
+        date: "2025-12-20",
+        title: "Spotify 100-Track Limit Bypass",
+        changes: [
+            "Replaced guest token API with SpotAPI library for unlimited playlist fetching.",
+            "Spotify playlists now fetch all tracks without the previous 100-track limitation.",
+            "Improved reliability using Spotify's partner API endpoint."
+        ]
+    },
+    {
         version: "1.2.3",
         date: "2025-12-20",
         title: "Spotify Playlist Integration",

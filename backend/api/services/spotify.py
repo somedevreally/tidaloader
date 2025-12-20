@@ -23,25 +23,28 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
         })
         
         # specific to spotify: get tracks
-        spotify_tracks = await client.get_playlist_tracks(playlist_uuid)
+        # Returns (tracks, is_limited)
+        spotify_tracks, is_limited = await client.get_playlist_tracks(playlist_uuid)
         
         if not spotify_tracks:
             raise Exception("No tracks found or playlist is private/invalid.")
 
         total_tracks = len(spotify_tracks)
         
+        limit_msg = " [Truncated to 100 due to guest limit]" if is_limited else ""
+        
         # If validating, show starting validation message
         if should_validate:
              await queue.put({
                 "type": "info",
-                "message": f"Found {total_tracks} tracks. Starting validation...",
+                "message": f"Found {total_tracks} tracks{limit_msg}. Starting validation...",
                 "progress": 0,
                 "total": total_tracks
             })
         else:
             await queue.put({
                 "type": "info",
-                "message": f"Found {total_tracks} tracks. Processing...",
+                "message": f"Found {total_tracks} tracks{limit_msg}. Processing...",
                 "progress": 0,
                 "total": total_tracks
             })
@@ -102,11 +105,12 @@ async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_
         
         await queue.put({
             "type": "complete",
-            "message": f"Process complete: {found_count}/{total_tracks} matched on Tidal" if should_validate else f"Fetched {total_tracks} from Spotify",
+            "message": f"Process complete: {found_count}/{total_tracks} matched" if should_validate else f"Fetched {total_tracks} from Spotify",
             "progress": total_tracks,
             "total": total_tracks,
             "tracks": validated_tracks,
-            "found_count": found_count
+            "found_count": found_count,
+            "is_limited": is_limited
         })
 
     except Exception as e:

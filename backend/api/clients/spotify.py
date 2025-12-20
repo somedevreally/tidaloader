@@ -1,9 +1,11 @@
-import httpx
-import re
-import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass
+from itertools import chain
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+from spotapi import Public
 
 logger = logging.getLogger(__name__)
 
@@ -18,161 +20,90 @@ class SpotifyTrack:
 class SpotifyClient:
     """
     Client for accessing Spotify playlist data without user credentials.
-    Uses the 'Embed' page to extract a guest access token, then uses the official API.
+    Uses SpotAPI library which accesses Spotify's partner API for full playlist access.
     """
     
     def __init__(self):
-        self.client = httpx.AsyncClient(
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            },
-            timeout=30.0,
-            follow_redirects=True
-        )
-        self.access_token = None
+        self._executor = ThreadPoolExecutor(max_workers=2)
 
     async def close(self):
-        await self.client.aclose()
+        self._executor.shutdown(wait=False)
 
-    async def _get_guest_token(self, playlist_id: str) -> Optional[str]:
-        """Fetch the embed page and extract the guest access token from __NEXT_DATA__"""
-        embed_url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-        logger.info(f"Fetching guest token from {embed_url}")
+    def _fetch_playlist_sync(self, playlist_id: str) -> List[SpotifyTrack]:
+        """
+        Synchronous method to fetch all tracks using SpotAPI.
+        SpotAPI uses the partner API which has no 100 track limit.
+        """
+        tracks = []
         
         try:
-            response = await self.client.get(embed_url)
-            response.raise_for_status()
-            html = response.text
+            # Get all chunks from SpotAPI (handles pagination internally, up to 343 per chunk)
+            chunks = list(Public.playlist_info(playlist_id))
+            all_items = list(chain.from_iterable([chunk['items'] for chunk in chunks]))
             
-            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">\s*(.*?)\s*</script>', html, re.DOTALL)
-            if not match:
-                logger.error("Could not find __NEXT_DATA__ in Spotify embed page")
-                return None
-            
-            data = json.loads(match.group(1))
-            
-            # Navigate path to token: props.pageProps.state.settings.session.accessToken
-            try:
-                token = data['props']['pageProps']['state']['settings']['session']['accessToken']
-                logger.info("Successfully extracted Spotify guest access token")
-                return token
-            except KeyError as e:
-                logger.error(f"Failed to extract token from JSON structure: {e}")
-                return None
+            for item in all_items:
+                track_data = item.get('itemV2', {}).get('data', {})
+                typename = track_data.get('__typename')
                 
-        except Exception as e:
-            logger.error(f"Error fetching guest token: {e}")
-            return None
-
-    async def get_playlist_tracks(self, playlist_id: str) -> List[SpotifyTrack]:
-        """Fetch all tracks from a playlist using guest token and API"""
-        
-        # 1. Get Token
-        token = await self._get_guest_token(playlist_id)
-        if not token:
-            logger.warning("Could not get guest token, falling back to scraped embed data (limit 100 tracks)")
-            return await self._scrape_embed_tracks_fallback(playlist_id)
-            
-        return await self._fetch_tracks_from_api(playlist_id, token)
-
-    async def _fetch_tracks_from_api(self, playlist_id: str, token: str) -> List[SpotifyTrack]:
-        """Use official API with guest token to get all tracks"""
-        url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        all_tracks = []
-        offset = 0
-        limit = 100
-        
-        try:
-            while True:
-                logger.info(f"Fetching Spotify tracks offset={offset}...")
-                params = {
-                    "offset": offset,
-                    "limit": limit,
-                    "additional_types": "track"
-                }
+                # Skip non-track items (LocalTrack, RestrictedContent, NotFound, Episode)
+                if typename != 'Track':
+                    continue
                 
-                response = await self.client.get(url, headers=headers, params=params)
-                response.raise_for_status()
-                data = response.json()
+                # Extract track info
+                name = track_data.get('name', 'Unknown Title')
                 
-                items = data.get("items", [])
-                if not items:
-                    break
-                    
-                for item in items:
-                    track_obj = item.get("track")
-                    # Handle local files or null tracks
-                    if not track_obj or track_obj.get("is_local"):
-                        continue
-                        
-                    artists = [a["name"] for a in track_obj.get("artists", [])]
-                    artist_str = ", ".join(artists) if artists else "Unknown Artist"
-                    
-                    all_tracks.append(SpotifyTrack(
-                        title=track_obj.get("name", "Unknown Title"),
-                        artist=artist_str,
-                        album=track_obj.get("album", {}).get("name"),
-                        duration_ms=track_obj.get("duration_ms"),
-                        spotify_id=track_obj.get("id")
-                    ))
+                # Get artists
+                artists_data = track_data.get('artists', {}).get('items', [])
+                if artists_data:
+                    artist_names = [a.get('profile', {}).get('name', '') for a in artists_data]
+                    artist_str = ", ".join(filter(None, artist_names)) or "Unknown Artist"
+                else:
+                    artist_str = "Unknown Artist"
                 
-                if not data.get("next"):
-                    break
-                    
-                offset += limit
+                # Get album
+                album_data = track_data.get('albumOfTrack', {})
+                album_name = album_data.get('name')
                 
-            logger.info(f"Fetched {len(all_tracks)} tracks from Spotify API")
-            return all_tracks
-            
-        except Exception as e:
-            logger.error(f"Error fetching tracks from API: {e}")
-            logger.warning("Falling back to embed scraping")
-            return await self._scrape_embed_tracks_fallback(playlist_id)
-
-    async def _scrape_embed_tracks_fallback(self, playlist_id: str) -> List[SpotifyTrack]:
-        """Fallback: Parse tracks directly from the embed JSON (limit 100)"""
-        embed_url = f"https://open.spotify.com/embed/playlist/{playlist_id}"
-        try:
-            response = await self.client.get(embed_url)
-            response.raise_for_status()
-            html = response.text
-            
-            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">\s*(.*?)\s*</script>', html, re.DOTALL)
-            if not match:
-                return []
-            
-            data = json.loads(match.group(1))
-            
-            # Try to find track list
-            # Path: props.pageProps.state.data.entity.trackList
-            items = []
-            try:
-                items = data['props']['pageProps']['state']['data']['entity']['trackList']
-            except KeyError:
-                logger.error("Could not find trackList in fallback data")
-                return []
+                # Get duration
+                duration_data = track_data.get('trackDuration', {})
+                duration_ms = duration_data.get('totalMilliseconds')
+                if duration_ms:
+                    duration_ms = int(duration_ms)
                 
-            tracks = []
-            for item in items:
-                # Structure: {'title': '...', 'subtitle': '...', ...}
-                # Title = Title, Subtitle = Artist
-                title = item.get('title')
-                artist = item.get('subtitle')
+                # Get Spotify ID from URI (format: spotify:track:XXXXX)
+                uri = track_data.get('uri', '')
+                spotify_id = uri.split(':')[-1] if uri.startswith('spotify:track:') else None
                 
-                if title and artist:
-                    tracks.append(SpotifyTrack(
-                        title=title,
-                        artist=artist,
-                        album=None, # Album missing in this view
-                        duration_ms=item.get('duration'),
-                        spotify_id=item.get('uid') # UID is not spotify ID strictly but usable
-                    ))
-            
-            logger.info(f"Scraped {len(tracks)} tracks from embed data (fallback)")
+                tracks.append(SpotifyTrack(
+                    title=name,
+                    artist=artist_str,
+                    album=album_name,
+                    duration_ms=duration_ms,
+                    spotify_id=spotify_id
+                ))
+                
+            logger.info(f"Fetched {len(tracks)} tracks from Spotify via SpotAPI")
             return tracks
             
         except Exception as e:
-            logger.error(f"Error in fallback scraping: {e}")
-            return []
+            logger.error(f"Error fetching playlist with SpotAPI: {e}")
+            raise
+
+    async def get_playlist_tracks(self, playlist_id: str) -> Tuple[List[SpotifyTrack], bool]:
+        """
+        Fetch all tracks from a playlist using SpotAPI.
+        Returns: (tracks, is_limited)
+        is_limited is always False with SpotAPI as it has no practical limit.
+        """
+        loop = asyncio.get_event_loop()
+        
+        try:
+            tracks = await loop.run_in_executor(
+                self._executor,
+                self._fetch_playlist_sync,
+                playlist_id
+            )
+            return tracks, False
+        except Exception as e:
+            logger.error(f"Failed to fetch playlist: {e}")
+            return [], False
