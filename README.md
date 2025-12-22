@@ -114,13 +114,25 @@ Fully responsive design that works on phones, tablets, and desktops with touch-f
 
 ## Screenshots
 
-<p align="center">
-  <img src="https://i.imgur.com/as8iNqV.png" width="45%" alt="Album Page">
-  <img src="https://i.imgur.com/5mtKF52.png" width="45%" alt="Artist Page">
-</p>
-<p align="center">
-  <img src="https://i.imgur.com/JrBzovz.png" width="90%" alt="Download Management">
-</p>
+<table>
+  <tr>
+    <td align="center">
+        <img height="951" alt="image" src="https://github.com/user-attachments/assets/6e628b81-38e9-449d-ab23-0c7a87039acd" />
+      <br />
+      <b>Spotify Playlist Download</b>
+    </td>
+    <td align="center">
+        <img width="1810" height="1141" alt="image" src="https://github.com/user-attachments/assets/8e554935-dbcb-47d6-8cef-182d8e50d29d" />
+      <br />
+      <b>Track Search</b>
+    </td>
+  </tr>
+</table>
+
+<details>
+  <summary>View Full Page Screenshot of Arist Page</summary>
+    <img width="90%" height="2355" alt="image" src="https://github.com/user-attachments/assets/e613c2f9-a3be-4c5c-adf2-e20739cb2548" />
+</details>
 
 ---
 
