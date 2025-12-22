@@ -308,6 +308,6 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 > - Users are solely responsible for complying with copyright laws in their jurisdiction.
 > - All music rights remain with their respective copyright holders.
 > - Users are encouraged to support artists by maintaining a valid Tidal subscription.
-> - This tool serves as a downloading interface for personal, non-commercial use.
+> - This tool serves as a interface for personal, non-commercial use.
 >
 > The Tidaloader Project assumes no responsibility for any misuse or legal violations.
