@@ -187,12 +187,18 @@ class JellyfinClient:
             elif image_data.startswith(b'RIFF') and image_data[8:12] == b'WEBP':
                 content_type = "image/webp"
 
+            # Try Base64 encoding as binary upload is failing (500 Error)
+            # Some Jellyfin setups (proxies) fail with raw binary POSTs
+            import base64
+            b64_data = base64.b64encode(image_data)
+            
             headers = self._get_headers()
             headers["Content-Type"] = content_type
             
-            logger.info(f"Uploading image: {len(image_data)} bytes, Detected Type: {content_type}")
-
-            response = self.session.post(url, data=image_data, headers=headers, timeout=30)
+            # Send Base64 data
+            logger.info(f"Uploading image (Base64): {len(b64_data)} bytes, Original Type: {content_type}")
+            response = self.session.post(url, data=b64_data, headers=headers, timeout=30)
+            
             response.raise_for_status()
             logger.info(f"Successfully uploaded image for item {item_id}")
             return True
