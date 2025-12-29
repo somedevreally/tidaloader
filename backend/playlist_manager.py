@@ -11,6 +11,8 @@ import aiofiles
 
 from api.settings import settings, DOWNLOAD_DIR, PLAYLISTS_DIR
 from api.clients import tidal_client
+from api.clients.jellyfin_client import jellyfin_client
+from api.services.listenbrainz import fetch_and_validate_listenbrainz_playlist
 from api.services.files import get_output_relative_path, sanitize_path_component
 # from api.utils.logging import log_info, log_error, log_warning (Using standard logger instead)
 from queue_manager import queue_manager, QueueItem
@@ -30,6 +32,8 @@ class MonitoredPlaylist:
     auto_download_tracks: bool = True
     quality: str = "LOSSLESS"
     track_count: int = 0
+    source: str = "tidal" # "tidal" or "listenbrainz"
+    extra_config: Dict[str, Any] = None # e.g. { "lb_username": "...", "lb_type": "..." }
 
 class PlaylistManager:
     _instance = None
@@ -72,14 +76,16 @@ class PlaylistManager:
     def get_playlist(self, uuid: str) -> Optional[MonitoredPlaylist]:
         return next((p for p in self._playlists if p.uuid == uuid), None)
 
-    def add_monitored_playlist(self, uuid: str, name: str, frequency: str = "manual", quality: str = "LOSSLESS") -> tuple[MonitoredPlaylist, bool]:
-        logger.info(f"Adding/Updating playlist: {uuid} - {name} (Freq: {frequency}, Qual: {quality})")
+    def add_monitored_playlist(self, uuid: str, name: str, frequency: str = "manual", quality: str = "LOSSLESS", source: str = "tidal", extra_config: Dict = None) -> tuple[MonitoredPlaylist, bool]:
+        logger.info(f"Adding/Updating playlist: {uuid} - {name} (Freq: {frequency}, Qual: {quality}, Source: {source})")
         # Check if exists
         existing = self.get_playlist(uuid)
         if existing:
             logger.info(f"Found existing playlist {uuid}. Updating settings.")
             existing.sync_frequency = frequency
             existing.quality = quality
+            existing.source = source
+            existing.extra_config = extra_config
             # Start sync immediately? No, caller decides.
             self._save_state()
             logger.info(f"Playlist {uuid} updated. Current list size: {len(self._playlists)}")
@@ -95,7 +101,9 @@ class PlaylistManager:
             name=name,
             path=filename,
             sync_frequency=frequency,
-            quality=quality
+            quality=quality,
+            source=source,
+            extra_config=extra_config
         )
         self._playlists.append(playlist)
         self._save_state()
@@ -145,14 +153,31 @@ class PlaylistManager:
         if not playlist:
             raise ValueError("Playlist not found")
 
-        logger.info(f"Syncing playlist: {playlist.name} ({playlist.uuid})")
+        logger.info(f"Syncing playlist: {playlist.name} ({playlist.uuid}) [Source: {playlist.source}]")
         
-        # 1. Fetch tracks
+        raw_items = []
+        
+        # 1. Fetch tracks based on source
+        if playlist.source == 'listenbrainz':
+            raw_items = await self._fetch_listenbrainz_items(playlist)
+        else:
+            raw_items = await self._fetch_tidal_items(playlist)
+            
+        logger.info(f"Fetched {len(raw_items)} items for playlist {playlist.uuid}")
+        
+        if not raw_items:
+            logger.warning(f"No tracks found for playlist {playlist.name}")
+            return {'status': 'empty', 'added': 0}
+
+        # 2. Process tracks & M3U8 content
+        return await self._process_playlist_items(playlist, raw_items)
+
+    async def _fetch_tidal_items(self, playlist: MonitoredPlaylist) -> List[Dict]:
         try:
             result = tidal_client.get_playlist_tracks(playlist.uuid)
         except Exception as e:
             logger.error(f"Failed to fetch tracks for playlist {playlist.uuid}: {e}")
-            return {'status': 'error', 'message': str(e)}
+            return []
         
         # Unwrap v2 wrapper if present
         if isinstance(result, dict) and 'data' in result and 'version' in result:
@@ -171,13 +196,56 @@ class PlaylistManager:
         elif isinstance(result, list):
             raw_items = result
             
-        logger.info(f"Fetched {len(raw_items)} raw items for playlist {playlist.uuid}")
-        
-        if not raw_items:
-            logger.warning(f"No tracks found for playlist {playlist.name} (result type: {type(result)})")
-            return {'status': 'empty', 'added': 0}
+        return raw_items
 
-        # 2. Process tracks & M3U8 content
+    async def _fetch_listenbrainz_items(self, playlist: MonitoredPlaylist) -> List[Dict]:
+        if not playlist.extra_config:
+            logger.error(f"Missing extra_config for ListenBrainz playlist {playlist.name}")
+            return []
+            
+        username = playlist.extra_config.get('lb_username')
+        pl_type = playlist.extra_config.get('lb_type')
+        
+        if not username or not pl_type:
+            logger.error("Invalid ListenBrainz config")
+            return []
+            
+        try:
+            # Helper to log progress for background tasks
+            async def progress_logger(data):
+                if data.get('type') in ['info', 'complete']:
+                    logger.info(f"[LB-Sync] {data.get('message')}")
+            
+            tracks = await fetch_and_validate_listenbrainz_playlist(
+                username=username, 
+                playlist_type=pl_type, 
+                progress_callback=progress_logger, 
+                validate=True
+            )
+            
+            # Normalize to match "Tidal Item" structure roughly
+            normalized = []
+            for t in tracks:
+                if not t.get('tidal_exists') or not t.get('tidal_id'):
+                    continue
+                    
+                # Construct item resembling Tidal API response
+                normalized.append({
+                    'item': {
+                        'id': int(t['tidal_id']) if str(t['tidal_id']).isdigit() else t['tidal_id'],
+                        'title': t['title'],
+                        'artist': {'name': t['artist'], 'id': t.get('tidal_artist_id')},
+                        'album': {'title': t.get('album', 'Unknown Album'), 'id': t.get('tidal_album_id'), 'cover': t.get('cover')},
+                        'duration': -1 # We don't have duration from simple valid result
+                    }
+                })
+            return normalized
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch ListenBrainz tracks: {e}")
+            return []
+
+    async def _process_playlist_items(self, playlist: MonitoredPlaylist, raw_items: List[Dict]) -> Dict[str, Any]:
         m3u8_lines = ["#EXTM3U"]
         items_to_download = []
         
@@ -343,66 +411,104 @@ class PlaylistManager:
         
         return {'status': 'success', 'queued': queued_count, 'total_tracks': len(raw_items)}
 
+    async def _sync_cover_to_jellyfin(self, playlist_name: str, image_path: Path):
+        """
+        Tries to find the playlist in Jellyfin and upload the cover art.
+        """
+        if not settings.jellyfin_url or not settings.jellyfin_api_key:
+            return
+
+        try:
+            # 1. Find Playlist ID
+            playlist_id = jellyfin_client.find_playlist_id(playlist_name)
+            if not playlist_id:
+                logger.info(f"Playlist '{playlist_name}' not found in Jellyfin. Skipping cover sync.")
+                # Note: It might not be indexed yet if we just created the files. 
+                # This could be improved by a retry or scheduled task, but for now it's best effort.
+                return
+            
+            # 2. Read Image
+            async with aiofiles.open(image_path, 'rb') as f:
+                data = await f.read()
+                
+            # 3. Upload
+            if jellyfin_client.upload_image(playlist_id, data):
+                logger.info(f"Successfully uploaded cover for '{playlist_name}' to Jellyfin")
+            else:
+                logger.warning(f"Failed to upload cover for '{playlist_name}' to Jellyfin")
+                
+        except Exception as e:
+            logger.error(f"Jellyfin Cover Sync Error: {e}")
+
     async def _ensure_playlist_cover(self, playlist: MonitoredPlaylist, folder_path: Path, safe_name: str):
         """Downloads the playlist cover image to {PlaylistFolder}/{safe_name}.jpg if missing"""
         # Target filename: {safe_name}.jpg (Same basename as m3u8)
         cover_path = folder_path / f"{safe_name}.jpg"
         
         if cover_path.exists():
+            # Even if exists locally, we might want to ensure it's in Jellyfin?
+            # Let's try to sync to Jellyfin if configured
+            await self._sync_cover_to_jellyfin(playlist.name, cover_path)
             return
-            
-        logger.info(f"Downloading cover for playlist {playlist.name}...")
+
+        # ... (Download logic remains similar but needs source adaptation)
         
-        try:
-            pl_info = tidal_client.get_playlist(playlist.uuid)
-            if not pl_info:
-                logger.warning(f"No playlist info returned for {playlist.name}")
-                return
+        image_url = None
+        
+        if playlist.source == 'listenbrainz':
+             # TODO: LB covers? ListenBrainz playlists don't really have covers unless we generate one
+             # or pick one from the tracks. 
+             # For now, let's skip for LB or use a placeholder if we had one.
+             pass
+        else:
+             # Tidal Logic
+            logger.info(f"Downloading cover for playlist {playlist.name}...")
             
-            # Wrapper unwrapping logic
-            if 'data' in pl_info:
-                pl_info = pl_info['data']
-            
-            if 'item' in pl_info:
-                pl_info = pl_info['item']
-            elif 'playlist' in pl_info:
-                pl_info = pl_info['playlist']
-
-            # Robust ID extraction (like search.py)
-            priority_keys = ['squareImage', 'image', 'cover', 'picture', 'imageId']
-            image_guid = None
-            for key in priority_keys:
-                if val := pl_info.get(key):
-                    image_guid = str(val).strip()
-                    break
-            
-            if not image_guid:
-                logger.warning(f"No image GUID found for playlist {playlist.name}")
-                return
+            try:
+                pl_info = tidal_client.get_playlist(playlist.uuid)
+                if not pl_info:
+                    logger.warning(f"No playlist info returned for {playlist.name}")
+                    return
                 
-            # Construct URL (Tidal Resource URL)
-            # Must split UUID with slashes: c825... -> c825/....
-            image_path = image_guid.replace('-', '/')
-            
-            # Try 1280x1280 first (often High Res), fallback to 640x640 if needed (frontend uses various)
-            # But let's stick to 640x640 as safety for now as it matched downloads.py
-            image_url = f"https://resources.tidal.com/images/{image_path}/640x640.jpg"
+                # Wrapper unwrapping logic
+                if 'data' in pl_info:
+                    pl_info = pl_info['data']
+                
+                if 'item' in pl_info:
+                    pl_info = pl_info['item']
+                elif 'playlist' in pl_info:
+                    pl_info = pl_info['playlist']
 
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
+                # Robust ID extraction (like search.py)
+                priority_keys = ['squareImage', 'image', 'cover', 'picture', 'imageId']
+                image_guid = None
+                for key in priority_keys:
+                    if val := pl_info.get(key):
+                        image_guid = str(val).strip()
+                        break
+                
+                if image_guid:
+                     # Construct URL (Tidal Resource URL)
+                    image_path_url = image_guid.replace('-', '/')
+                    image_url = f"https://resources.tidal.com/images/{image_path_url}/640x640.jpg"
+            except Exception as e:
+                logger.error(f"Error resolving Tidal cover: {e}")
 
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(image_url) as resp:
-                    if resp.status == 200:
-                        async with aiofiles.open(cover_path, 'wb') as f:
-                            await f.write(await resp.read())
-                        logger.info(f"Cover saved: {cover_path}")
-                    else:
-                        logger.warning(f"Failed cover download: {resp.status} from {image_url}")
-                        
-        except Exception as e:
-            logger.error(f"Error downloading cover: {e}")
+        if image_url:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            async with aiofiles.open(cover_path, 'wb') as f:
+                                await f.write(await resp.read())
+                            logger.info(f"Cover saved: {cover_path}")
+                            
+                            # Sync to Jellyfin
+                            await self._sync_cover_to_jellyfin(playlist.name, cover_path)
+                        else:
+                            logger.warning(f"Failed cover download: {resp.status} from {image_url}")
+            except Exception as e:
+                 logger.error(f"Error downloading cover: {e}")
 
     def get_playlist_files(self, uuid: str) -> List[str]:
         """

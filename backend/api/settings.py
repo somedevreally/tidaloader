@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     run_beets: bool = False
     embed_lyrics: bool = False
     
+    # Jellyfin Integration
+    jellyfin_url: Optional[str] = None
+    jellyfin_api_key: Optional[str] = None
+    
     class Config:
         env_file = Path(__file__).parent.parent.parent / ".env"
         case_sensitive = False

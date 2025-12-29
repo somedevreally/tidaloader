@@ -14,6 +14,8 @@ export const useDownloadStore = create(
       groupCompilations: true,
       runBeets: false,
       embedLyrics: false,
+      jellyfinUrl: "",
+      jellyfinApiKey: "",
 
       // Server queue settings (synced from backend)
       serverQueueSettings: {
@@ -154,12 +156,15 @@ export const useDownloadStore = create(
             maxConcurrent: res.active_downloads !== undefined ? res.active_downloads : state.maxConcurrent,
             runBeets: res.run_beets !== undefined ? res.run_beets : state.runBeets,
             embedLyrics: res.embed_lyrics !== undefined ? res.embed_lyrics : state.embedLyrics,
+            jellyfinUrl: res.jellyfin_url !== undefined ? res.jellyfin_url : state.jellyfinUrl,
+            jellyfinApiKey: res.jellyfin_api_key !== undefined ? res.jellyfin_api_key : state.jellyfinApiKey,
 
             serverQueueSettings: {
               ...state.serverQueueSettings,
               sync_time: res.sync_time !== undefined ? res.sync_time : state.serverQueueSettings.sync_time
             }
           }));
+          return res;
         } catch (e) {
           console.error("Failed to fetch system settings", e);
         }
@@ -167,20 +172,27 @@ export const useDownloadStore = create(
 
       updateServerSettings: async (settings) => {
         try {
-          if (settings.sync_time !== undefined) {
-            await fetch('/api/system/settings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sync_time: settings.sync_time })
-            });
-            // Optimistic update
-            set((state) => ({
-              serverQueueSettings: {
-                ...state.serverQueueSettings,
-                sync_time: settings.sync_time
-              }
-            }));
-          }
+          const body = { ...settings };
+          await fetch('/api/system/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+
+          // Optimistic update
+          set((state) => ({
+            organizationTemplate: settings.organization_template !== undefined ? settings.organization_template : state.organizationTemplate,
+            groupCompilations: settings.group_compilations !== undefined ? settings.group_compilations : state.groupCompilations,
+            maxConcurrent: settings.active_downloads !== undefined ? settings.active_downloads : state.maxConcurrent,
+            runBeets: settings.run_beets !== undefined ? settings.run_beets : state.runBeets,
+            embedLyrics: settings.embed_lyrics !== undefined ? settings.embed_lyrics : state.embedLyrics,
+            jellyfinUrl: settings.jellyfin_url !== undefined ? settings.jellyfin_url : state.jellyfinUrl,
+            jellyfinApiKey: settings.jellyfin_api_key !== undefined ? settings.jellyfin_api_key : state.jellyfinApiKey,
+            serverQueueSettings: {
+              ...state.serverQueueSettings,
+              sync_time: settings.sync_time !== undefined ? settings.sync_time : state.serverQueueSettings.sync_time
+            }
+          }));
         } catch (e) {
           console.error("Failed to update system settings", e);
         }
@@ -235,7 +247,9 @@ export const useDownloadStore = create(
               group_compilations: s.groupCompilations,
               active_downloads: s.maxConcurrent,
               run_beets: s.runBeets,
-              embed_lyrics: s.embedLyrics
+              embed_lyrics: s.embedLyrics,
+              jellyfin_url: s.jellyfinUrl,
+              jellyfin_api_key: s.jellyfinApiKey
             })
           });
         } catch (e) {
