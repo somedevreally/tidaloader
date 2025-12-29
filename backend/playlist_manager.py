@@ -439,8 +439,17 @@ class PlaylistManager:
                 return
 
             # 2. Read Image
+            file_size = image_path.stat().st_size
+            if file_size == 0:
+                logger.warning(f"Cover file for '{playlist_name}' is empty (0 bytes). Skipping upload.")
+                return
+
             async with aiofiles.open(image_path, 'rb') as f:
                 data = await f.read()
+
+            if len(data) == 0:
+                 logger.warning(f"Read 0 bytes from '{playlist_name}'. Skipping upload.")
+                 return
                 
             # 3. Upload
             if jellyfin_client.upload_image(playlist_id, data):

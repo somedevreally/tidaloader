@@ -179,14 +179,26 @@ class JellyfinClient:
         # Actually jellyfin expects binary body.
         
         url = f"{base_url}/Items/{item_id}/Images/{image_type}"
-        headers = self._get_headers()
-        headers["Content-Type"] = "image/jpeg" # Assuming JPG for now as we save .jpg
-        
         try:
+            # Simple format detection based on magic numbers
+            content_type = "image/jpeg"
+            if image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+                content_type = "image/png"
+            elif image_data.startswith(b'RIFF') and image_data[8:12] == b'WEBP':
+                content_type = "image/webp"
+
+            headers = self._get_headers()
+            headers["Content-Type"] = content_type
+
             response = self.session.post(url, data=image_data, headers=headers, timeout=30)
             response.raise_for_status()
             logger.info(f"Successfully uploaded image for item {item_id}")
             return True
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Failed to upload image for {item_id}: {e}")
+            if e.response is not None:
+                logger.error(f"Server Response: {e.response.text}")
+            return False
         except Exception as e:
             logger.error(f"Failed to upload image for {item_id}: {e}")
             return False
