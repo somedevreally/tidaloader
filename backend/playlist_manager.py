@@ -246,7 +246,7 @@ class PlaylistManager:
             return []
 
     async def _process_playlist_items(self, playlist: MonitoredPlaylist, raw_items: List[Dict]) -> Dict[str, Any]:
-        m3u8_lines = ["#EXTM3U"]
+        m3u8_lines = ["#EXTM3U", f"# Source: {playlist.source}"]
         items_to_download = []
         
         for i, item in enumerate(raw_items):
