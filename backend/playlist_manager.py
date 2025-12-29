@@ -419,14 +419,25 @@ class PlaylistManager:
             return
 
         try:
-            # 1. Find Playlist ID
-            playlist_id = jellyfin_client.find_playlist_id(playlist_name)
-            if not playlist_id:
-                logger.info(f"Playlist '{playlist_name}' not found in Jellyfin. Skipping cover sync.")
-                # Note: It might not be indexed yet if we just created the files. 
-                # This could be improved by a retry or scheduled task, but for now it's best effort.
-                return
+            # 1. Find Playlist ID with Retries
+            # Jellyfin might take a moment to index the new m3u8 file
+            playlist_id = None
+            max_retries = 3
+            retry_delay = 4 # seconds
             
+            for attempt in range(max_retries):
+                playlist_id = jellyfin_client.find_playlist_id(playlist_name)
+                if playlist_id:
+                    break
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"Playlist '{playlist_name}' not found yet. Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+            
+            if not playlist_id:
+                logger.warning(f"Playlist '{playlist_name}' not found in Jellyfin after {max_retries} attempts. Skipping cover sync.")
+                return
+
             # 2. Read Image
             async with aiofiles.open(image_path, 'rb') as f:
                 data = await f.read()

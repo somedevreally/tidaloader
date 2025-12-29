@@ -96,32 +96,75 @@ class JellyfinClient:
 
     def find_playlist_id(self, name: str) -> Optional[str]:
         """
-        Search for a playlist by name.
+        Search for a playlist by name with robust fallback strategies.
+        Strategies:
+        1. API Search with exact name
+        2. API Search with sanitized name (often how Jellyfin indexes filename-based playlists)
+        3. Manual scan of ALL playlists (fallback if search index is broken)
         """
         base_url = self._get_base_url()
         if not base_url:
             return None
 
-        url = f"{base_url}/Items"
-        params = {
-            "Recursive": "true",
-            "IncludeItemTypes": "Playlist",
-            "SearchTerm": name,
-            "Limit": 1
-        }
-        
+        # Helper for search
+        def search_api(term: str) -> Optional[str]:
+            url = f"{base_url}/Items"
+            params = {
+                "Recursive": "true",
+                "IncludeItemTypes": "Playlist",
+                "SearchTerm": term,
+                "Limit": 1
+            }
+            try:
+                response = self.session.get(url, params=params, headers=self._get_headers(), timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("TotalRecordCount", 0) > 0 and data.get("Items"):
+                    return data["Items"][0]["Id"]
+            except Exception as e:
+                logger.error(f"Search API failed for term '{term}': {e}")
+            return None
+
+        # Strategy 1: Exact Name
+        logger.info(f"Strategy 1: Searching for playlist '{name}'")
+        if found_id := search_api(name):
+            return found_id
+
+        # Strategy 2: Sanitized Name
+        from api.services.files import sanitize_path_component
+        safe_name = sanitize_path_component(name)
+        if safe_name != name:
+            logger.info(f"Strategy 2: Searching for sanitized name '{safe_name}'")
+            if found_id := search_api(safe_name):
+                return found_id
+
+        # Strategy 3: Fetch All & Match (Brute Force)
+        logger.info(f"Strategy 3: Fetching all playlists to match '{name}' or '{safe_name}'")
         try:
-            response = self.session.get(url, params=params, headers=self._get_headers(), timeout=10)
+            url = f"{base_url}/Items"
+            params = {
+                "Recursive": "true",
+                "IncludeItemTypes": "Playlist",
+                # "Fields": "Path" # Optional
+            }
+            response = self.session.get(url, params=params, headers=self._get_headers(), timeout=15)
             response.raise_for_status()
             data = response.json()
-            if data.get("TotalRecordCount", 0) > 0 and data.get("Items"):
-                # Double check exact name match to be safe? 
-                # Or trust search. Let's return first match.
-                return data["Items"][0]["Id"]
-            return None
+            items = data.get("Items", [])
+            
+            for item in items:
+                # Check against original name
+                if item.get("Name") == name:
+                    return item.get("Id")
+                # Check against sanitized name
+                if item.get("Name") == safe_name:
+                    return item.get("Id")
+                    
         except Exception as e:
-            logger.error(f"Failed to find playlist {name}: {e}")
-            return None
+            logger.error(f"Strategy 3 failed: {e}")
+
+        logger.warning(f"Failed to find playlist '{name}' after all strategies.")
+        return None
 
     def upload_image(self, item_id: str, image_data: bytes, image_type: str = "Primary") -> bool:
         """
