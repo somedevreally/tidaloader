@@ -201,6 +201,15 @@ class JellyfinClient:
             logger.info(f"Successfully uploaded image for item {item_id}")
             return True
 
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Failed to upload image for {item_id}: {e}")
+            if e.response is not None:
+                logger.error(f"Server Response: {e.response.text}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to upload image for {item_id}: {e}")
+            return False
+
     def refresh_library(self) -> bool:
         """
         Triggers a library scan to pick up new files immediately.
@@ -212,19 +221,12 @@ class JellyfinClient:
         url = f"{base_url}/Library/Refresh"
         try:
             logger.info("Triggering Jellyfin Library Refresh...")
+            # Using POST usually works for triggering scheduled tasks
             response = self.session.post(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             return True
         except Exception as e:
             logger.error(f"Failed to refresh library: {e}")
-            return False
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Failed to upload image for {item_id}: {e}")
-            if e.response is not None:
-                logger.error(f"Server Response: {e.response.text}")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to upload image for {item_id}: {e}")
             return False
 
 jellyfin_client = JellyfinClient()
