@@ -497,10 +497,46 @@ class PlaylistManager:
         image_url = None
         
         if playlist.source == 'listenbrainz':
-             # TODO: LB covers? ListenBrainz playlists don't really have covers unless we generate one
-             # or pick one from the tracks. 
-             # For now, let's skip for LB or use a placeholder if we had one.
-             pass
+             # Generate Dynamic Cover for LB Playlists
+             try:
+                 from api.services.cover_generator import CoverArtGenerator
+                 # Use backend/assets
+                 assets_dir = Path(__file__).parent / "assets"
+                 generator = CoverArtGenerator(assets_dir)
+                 
+                 # Determine Title & Subtitle
+                 # Title: Playlist Name (e.g. "Weekly Jams")
+                 # Subtitle: User's Name/Initials from playlist name or config
+                 
+                 # Typically playlist.name is something like "Philippe - Weekly Jams"
+                 # We want: 
+                 #   Title: Weekly Jams  
+                 #   Subtitle: Philippe
+                 
+                 title = playlist.name
+                 subtitle = ""
+                 
+                 if " - " in playlist.name:
+                     parts = playlist.name.split(" - ", 1)
+                     subtitle = parts[0] # "Philippe"
+                     title = parts[1]    # "Weekly Jams"
+                     
+                 logger.info(f"Generating cover for LB playlist: '{title}' (User: {subtitle})")
+                 
+                 cover_bytes = generator.generate_cover(title, subtitle)
+                 
+                 if cover_bytes:
+                     async with aiofiles.open(cover_path, 'wb') as f:
+                         await f.write(cover_bytes)
+                     logger.info(f"Generated & Saved cover: {cover_path}")
+                     
+                     # Sync to Jellyfin
+                     await self._sync_cover_to_jellyfin(playlist.name, cover_path)
+                 else:
+                     logger.warning("Failed to generate cover bytes (returned None)")
+
+             except Exception as e:
+                 logger.error(f"Error generating LB cover: {e}")
         else:
              # Tidal Logic
             logger.info(f"Downloading cover for playlist {playlist.name}...")
