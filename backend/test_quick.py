@@ -2,7 +2,7 @@
 import requests
 import json
 
-BASE_URL = "http://localhost:8001"  # Changed from 8000
+BASE_URL = "http://localhost:8001"  
 
 def test_root():
     """Test root endpoint"""
@@ -11,7 +11,7 @@ def test_root():
         response = requests.get(f"{BASE_URL}/")
         print(f"Status: {response.status_code}")
         
-        # Check if it's actually our API
+        
         data = response.json()
         print(f"Response: {json.dumps(data, indent=2)}")
         

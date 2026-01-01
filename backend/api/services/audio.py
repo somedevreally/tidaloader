@@ -180,13 +180,13 @@ async def write_flac_metadata(filepath: Path, metadata: dict):
         if metadata.get('genre'):
             audio['GENRE'] = metadata['genre']
         
-        # ISRC and Label (from MusicBrainz)
+        
         if metadata.get('isrc'):
             audio['ISRC'] = metadata['isrc']
         if metadata.get('label'):
             audio['LABEL'] = metadata['label']
         
-        # MusicBrainz IDs
+        
         if metadata.get('musicbrainz_trackid'):
             audio['MUSICBRAINZ_TRACKID'] = metadata['musicbrainz_trackid']
         if metadata.get('musicbrainz_albumid'):
@@ -198,7 +198,7 @@ async def write_flac_metadata(filepath: Path, metadata: dict):
         if metadata.get('musicbrainz_releasegroupid'):
             audio['MUSICBRAINZ_RELEASEGROUPID'] = metadata['musicbrainz_releasegroupid']
 
-        # Custom Tidal Tags
+        
         if metadata.get('tidal_track_id'):
             audio['TIDAL_TRACK_ID'] = metadata['tidal_track_id']
         if metadata.get('tidal_artist_id'):
@@ -248,7 +248,7 @@ async def write_m4a_metadata(filepath: Path, metadata: dict):
         if metadata.get('genre'):
             audio['\xa9gen'] = metadata['genre']
         
-        # MusicBrainz IDs (Freeform)
+        
         if metadata.get('musicbrainz_trackid'):
             audio['----:com.apple.iTunes:MusicBrainz Track Id'] = metadata['musicbrainz_trackid'].encode('utf-8')
         if metadata.get('musicbrainz_albumid'):
@@ -260,13 +260,13 @@ async def write_m4a_metadata(filepath: Path, metadata: dict):
         if metadata.get('musicbrainz_releasegroupid'):
             audio['----:com.apple.iTunes:MusicBrainz Release Group Id'] = metadata['musicbrainz_releasegroupid'].encode('utf-8')
         
-        # ISRC and Label
+        
         if metadata.get('isrc'):
             audio['----:com.apple.iTunes:ISRC'] = metadata['isrc'].encode('utf-8')
         if metadata.get('label'):
             audio['----:com.apple.iTunes:LABEL'] = metadata['label'].encode('utf-8')
 
-        # Custom Tidal Tags (Freeform)
+        
         if metadata.get('tidal_track_id'):
             audio['----:com.apple.iTunes:TIDAL_TRACK_ID'] = metadata['tidal_track_id'].encode('utf-8')
         if metadata.get('tidal_artist_id'):
@@ -342,24 +342,24 @@ async def write_mp3_metadata(filepath: Path, metadata: dict):
             total_discs = metadata.get('total_discs', 0)
             tags['discnumber'] = f"{disc_num}/{total_discs}" if total_discs else str(disc_num)
         
-        tags.save()  # Save standard tags FIRST to ensure they're always written
+        tags.save()  
         
-        # Custom tags (TXXX) - must use raw ID3 interface since EasyID3 doesn't support TXXX
+        
         try:
             from mutagen.id3 import TXXX, TSRC, TPUB
             audio = MP3(str(filepath), ID3=ID3)
             
-            # ISRC (has dedicated frame)
+            
             if metadata.get('isrc'):
                 audio.tags.delall('TSRC')
                 audio.tags.add(TSRC(encoding=3, text=[metadata['isrc']]))
             
-            # Label/Publisher (has dedicated frame)
+            
             if metadata.get('label'):
                 audio.tags.delall('TPUB')
                 audio.tags.add(TPUB(encoding=3, text=[metadata['label']]))
             
-            # MusicBrainz IDs (TXXX)
+            
             if metadata.get('musicbrainz_trackid'):
                 audio.tags.add(TXXX(encoding=3, desc='MusicBrainz Release Track Id', text=[metadata['musicbrainz_trackid']]))
             if metadata.get('musicbrainz_albumid'):
@@ -371,7 +371,7 @@ async def write_mp3_metadata(filepath: Path, metadata: dict):
             if metadata.get('musicbrainz_releasegroupid'):
                 audio.tags.add(TXXX(encoding=3, desc='MusicBrainz Release Group Id', text=[metadata['musicbrainz_releasegroupid']]))
             
-            # Tidal IDs
+            
             if metadata.get('tidal_track_id'):
                 audio.tags.add(TXXX(encoding=3, desc='TIDAL_TRACK_ID', text=[metadata['tidal_track_id']]))
             if metadata.get('tidal_artist_id'):
@@ -438,13 +438,13 @@ async def write_opus_metadata(filepath: Path, metadata: dict):
         if metadata.get('genre'):
             audio['GENRE'] = metadata['genre']
         
-        # ISRC and Label (from MusicBrainz)
+        
         if metadata.get('isrc'):
             audio['ISRC'] = metadata['isrc']
         if metadata.get('label'):
             audio['LABEL'] = metadata['label']
         
-        # MusicBrainz IDs
+        
         if metadata.get('musicbrainz_trackid'):
             audio['MUSICBRAINZ_TRACKID'] = metadata['musicbrainz_trackid']
         if metadata.get('musicbrainz_albumid'):
@@ -456,7 +456,7 @@ async def write_opus_metadata(filepath: Path, metadata: dict):
         if metadata.get('musicbrainz_releasegroupid'):
             audio['MUSICBRAINZ_RELEASEGROUPID'] = metadata['musicbrainz_releasegroupid']
 
-        # Custom Tidal Tags
+        
         if metadata.get('tidal_track_id'):
             audio['TIDAL_TRACK_ID'] = metadata['tidal_track_id']
         if metadata.get('tidal_artist_id'):

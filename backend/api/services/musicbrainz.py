@@ -15,12 +15,12 @@ import aiohttp
 from typing import Optional, Dict, Any, List
 from api.utils.logging import log_info, log_warning, log_success
 
-# MusicBrainz API settings
+
 MB_API_BASE = "https://musicbrainz.org/ws/2"
 MB_USER_AGENT = "Tidaloader/1.0 (https://github.com/RayZ3R0/tidaloader)"
-MB_RATE_LIMIT_DELAY = 1.0  # MusicBrainz requires 1 req/sec
+MB_RATE_LIMIT_DELAY = 1.0  
 
-# Cache to avoid repeated lookups
+
 _mb_cache: Dict[str, Dict] = {}
 
 
@@ -50,19 +50,19 @@ async def lookup_musicbrainz_metadata(
     
     result = None
     
-    # Strategy 1: ISRC lookup (most reliable)
+    
     if isrc:
         result = await _lookup_by_isrc(isrc)
         if result:
             log_success(f"[MusicBrainz] Found via ISRC: {isrc}")
     
-    # Strategy 2: Recording search
+    
     if not result:
         result = await _search_recording(title, artist, album, duration_ms)
         if result:
             log_success(f"[MusicBrainz] Found via recording search")
     
-    # Strategy 3: Release search with track matching
+    
     if not result and album:
         result = await _search_release_with_track(title, artist, album)
         if result:
@@ -93,7 +93,7 @@ async def _make_mb_request(endpoint: str, params: Dict[str, str]) -> Optional[Di
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 503:
-                    # Rate limited, wait and retry
+                    
                     log_warning("[MusicBrainz] Rate limited, waiting...")
                     await asyncio.sleep(MB_RATE_LIMIT_DELAY * 2)
                     return None
@@ -103,7 +103,7 @@ async def _make_mb_request(endpoint: str, params: Dict[str, str]) -> Optional[Di
         log_warning(f"[MusicBrainz] Request failed: {e}")
         return None
     finally:
-        # Respect rate limit
+        
         await asyncio.sleep(MB_RATE_LIMIT_DELAY)
 
 
@@ -120,7 +120,7 @@ async def _lookup_by_isrc(isrc: str) -> Optional[Dict[str, Any]]:
     if not recordings:
         return None
     
-    # Use the first recording
+    
     recording = recordings[0]
     return _extract_metadata_from_recording(recording)
 
@@ -132,7 +132,7 @@ async def _search_recording(
     duration_ms: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
     """Search for a recording by title and artist."""
-    # Build lucene query
+    
     query_parts = [
         f'recording:"{_escape_lucene(title)}"',
         f'artist:"{_escape_lucene(artist)}"'
@@ -155,12 +155,12 @@ async def _search_recording(
     if not recordings:
         return None
     
-    # Find the best match
+    
     best_recording = _find_best_recording_match(recordings, title, artist, duration_ms)
     if not best_recording:
         return None
     
-    # Fetch full recording details with includes
+    
     recording_id = best_recording.get('id')
     if not recording_id:
         return _extract_metadata_from_recording(best_recording)
@@ -195,7 +195,7 @@ async def _search_release_with_track(
     if not releases:
         return None
     
-    # Get the first release with track list
+    
     for release in releases[:3]:
         release_id = release.get('id')
         if not release_id:
@@ -208,7 +208,7 @@ async def _search_release_with_track(
         if not detailed:
             continue
         
-        # Find matching track in media
+        
         media = detailed.get('media', [])
         for medium in media:
             tracks = medium.get('tracks', [])
@@ -217,9 +217,9 @@ async def _search_release_with_track(
                 track_title = recording.get('title', '')
                 
                 if _titles_match(track_title, title):
-                    # Found the track! Extract metadata
+                    
                     result = _extract_metadata_from_recording(recording)
-                    # Add release-specific info
+                    
                     result.update(_extract_release_metadata(detailed))
                     result['track_number'] = track.get('position')
                     result['disc_number'] = medium.get('position', 1)
@@ -235,11 +235,11 @@ def _extract_metadata_from_recording(recording: Dict) -> Dict[str, Any]:
         'musicbrainz_recordingid': recording.get('id'),
     }
     
-    # Title
+    
     if recording.get('title'):
         result['mb_title'] = recording['title']
     
-    # Artist credits
+    
     artist_credit = recording.get('artist-credit', [])
     if artist_credit:
         artists = []
@@ -252,17 +252,17 @@ def _extract_metadata_from_recording(recording: Dict) -> Dict[str, Any]:
                 artist_ids.append(artist['id'])
         
         if artists:
-            result['mb_artist'] = artists[0]  # Primary artist
+            result['mb_artist'] = artists[0]  
             result['mb_artists'] = artists
         if artist_ids:
             result['musicbrainz_artistid'] = artist_ids[0]
             result['musicbrainz_artistids'] = artist_ids
     
-    # Duration
-    if recording.get('length'):
-        result['mb_duration'] = recording['length']  # In milliseconds
     
-    # Genres/Tags
+    if recording.get('length'):
+        result['mb_duration'] = recording['length']  
+    
+    
     genres = []
     for genre in recording.get('genres', []):
         genres.append(genre.get('name'))
@@ -270,15 +270,15 @@ def _extract_metadata_from_recording(recording: Dict) -> Dict[str, Any]:
         if tag.get('count', 0) >= 1:
             genres.append(tag.get('name'))
     if genres:
-        result['mb_genres'] = list(set(genres))[:5]  # Limit to 5 unique
+        result['mb_genres'] = list(set(genres))[:5]  
         result['genre'] = genres[0] if genres else None
     
-    # ISRCs
+    
     isrcs = recording.get('isrcs', [])
     if isrcs:
         result['isrc'] = isrcs[0]
     
-    # Releases (use first for album info)
+    
     releases = recording.get('releases', [])
     if releases:
         release = releases[0]
@@ -291,34 +291,34 @@ def _extract_release_metadata(release: Dict) -> Dict[str, Any]:
     """Extract metadata from a MusicBrainz release."""
     result = {}
     
-    # Release ID
+    
     if release.get('id'):
         result['musicbrainz_albumid'] = release['id']
     
-    # Album title
+    
     if release.get('title'):
         result['mb_album'] = release['title']
     
-    # Release date
+    
     date = release.get('date') or release.get('release-date')
     if date:
         result['mb_date'] = date
-        # Extract year
+        
         if len(date) >= 4:
             result['mb_year'] = date[:4]
     
-    # Release group (for album artist, type)
+    
     release_group = release.get('release-group', {})
     if release_group:
         if release_group.get('id'):
             result['musicbrainz_releasegroupid'] = release_group['id']
         
-        # Album type (album, single, EP, compilation, etc.)
+        
         primary_type = release_group.get('primary-type')
         if primary_type:
             result['mb_releasetype'] = primary_type.lower()
     
-    # Artist credit for album artist
+    
     artist_credit = release.get('artist-credit', [])
     if artist_credit:
         album_artists = []
@@ -330,11 +330,11 @@ def _extract_release_metadata(release: Dict) -> Dict[str, Any]:
             result['mb_album_artist'] = album_artists[0]
             result['musicbrainz_albumartistid'] = artist_credit[0].get('artist', {}).get('id')
     
-    # Country
+    
     if release.get('country'):
         result['mb_country'] = release['country']
     
-    # Labels
+    
     label_info = release.get('label-info', [])
     if label_info:
         labels = []
@@ -346,11 +346,11 @@ def _extract_release_metadata(release: Dict) -> Dict[str, Any]:
             result['mb_label'] = labels[0]
             result['mb_labels'] = labels
     
-    # Barcode
+    
     if release.get('barcode'):
         result['mb_barcode'] = release['barcode']
     
-    # Track count
+    
     media = release.get('media', [])
     if media:
         total_tracks = sum(m.get('track-count', 0) for m in media)
@@ -373,14 +373,14 @@ def _find_best_recording_match(
     for recording in recordings:
         score = 0
         
-        # Title match
+        
         rec_title = recording.get('title', '')
         if _titles_match(rec_title, title):
             score += 50
         elif title.lower() in rec_title.lower() or rec_title.lower() in title.lower():
             score += 30
         
-        # Artist match
+        
         artist_credit = recording.get('artist-credit', [])
         for credit in artist_credit:
             rec_artist = credit.get('artist', {}).get('name', '')
@@ -389,7 +389,7 @@ def _find_best_recording_match(
             elif artist.lower() in rec_artist.lower():
                 score += 20
         
-        # Duration match (within 5 seconds)
+        
         if duration_ms and recording.get('length'):
             diff = abs(duration_ms - recording['length'])
             if diff < 5000:
@@ -397,11 +397,11 @@ def _find_best_recording_match(
             elif diff < 10000:
                 score += 10
         
-        # Prefer recordings with releases
+        
         if recording.get('releases'):
             score += 10
         
-        # Higher score = better match
+        
         rec_score = recording.get('score', 0)
         if rec_score:
             score += min(rec_score // 10, 10)
@@ -412,7 +412,7 @@ def _find_best_recording_match(
     if not scored:
         return None
     
-    # Sort by score descending
+    
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[0][1]
 
@@ -420,7 +420,7 @@ def _find_best_recording_match(
 def _titles_match(title1: str, title2: str) -> bool:
     """Check if two titles match (case-insensitive, ignoring extra info)."""
     def normalize(s: str) -> str:
-        # Remove common suffixes like (Remastered), [2023 Remaster], etc.
+        
         import re
         s = re.sub(r'\s*[\(\[][^\)\]]*(?:remaster|remix|edit|version|mix|live|acoustic|demo|radio|explicit|clean).*?[\)\]]', '', s, flags=re.IGNORECASE)
         s = re.sub(r'\s*-\s*(?:remaster|remix|edit|version|single).*$', '', s, flags=re.IGNORECASE)
@@ -453,15 +453,15 @@ async def enhance_metadata_with_musicbrainz(metadata: Dict[str, Any]) -> Dict[st
         log_warning("[MusicBrainz] Missing title or artist, skipping lookup")
         return metadata
     
-    # Convert duration to milliseconds if needed
+    
     duration_ms = None
     if duration:
-        if duration < 10000:  # Likely in seconds
+        if duration < 10000:  
             duration_ms = duration * 1000
         else:
             duration_ms = duration
     
-    # Look up MusicBrainz metadata
+    
     mb_data = await lookup_musicbrainz_metadata(
         title=title,
         artist=artist,
@@ -472,11 +472,11 @@ async def enhance_metadata_with_musicbrainz(metadata: Dict[str, Any]) -> Dict[st
     if not mb_data:
         return metadata
     
-    # Merge MusicBrainz data with existing metadata
-    # Only fill in missing fields, don't override existing good data
+    
+    
     enhanced = metadata.copy()
     
-    # MusicBrainz IDs (always add if available)
+    
     if mb_data.get('musicbrainz_trackid'):
         enhanced['musicbrainz_trackid'] = mb_data['musicbrainz_trackid']
     if mb_data.get('musicbrainz_albumid'):
@@ -488,33 +488,33 @@ async def enhance_metadata_with_musicbrainz(metadata: Dict[str, Any]) -> Dict[st
     if mb_data.get('musicbrainz_releasegroupid'):
         enhanced['musicbrainz_releasegroupid'] = mb_data['musicbrainz_releasegroupid']
     
-    # Date - prefer MusicBrainz if we don't have one
+    
     if not enhanced.get('date') and mb_data.get('mb_date'):
         enhanced['date'] = mb_data['mb_date']
     
-    # Genre - often missing from Tidal
+    
     if not enhanced.get('genre') and mb_data.get('genre'):
         enhanced['genre'] = mb_data['genre']
     
-    # ISRC
+    
     if not enhanced.get('isrc') and mb_data.get('isrc'):
         enhanced['isrc'] = mb_data['isrc']
     
-    # Album artist
+    
     if not enhanced.get('album_artist') and mb_data.get('mb_album_artist'):
         enhanced['album_artist'] = mb_data['mb_album_artist']
     
-    # Label
+    
     if mb_data.get('mb_label'):
         enhanced['label'] = mb_data['mb_label']
     
-    # Total tracks/discs (if not already set)
+    
     if not enhanced.get('total_tracks') and mb_data.get('mb_total_tracks'):
         enhanced['total_tracks'] = mb_data['mb_total_tracks']
     if not enhanced.get('total_discs') and mb_data.get('mb_total_discs'):
         enhanced['total_discs'] = mb_data['mb_total_discs']
     
-    # Log what was enhanced
+    
     added_fields = []
     if enhanced.get('musicbrainz_trackid'):
         added_fields.append('MB Track ID')

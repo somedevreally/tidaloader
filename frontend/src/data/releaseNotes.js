@@ -1,5 +1,19 @@
 export const releaseNotes = [
     {
+        version: "1.2.7",
+        date: "2026-01-01",
+        title: "MusicBrainz Tagging & Quality Fallback",
+        changes: [
+            "New Feature: MusicBrainz Integration! Fetch accurate metadata (genre, ISRC, MBIDs, Label) for all downloads.",
+            "Added 'MusicBrainz Tagging' toggle in Settings (replaces Group Compilations).",
+            "Improved audio tagging for FLAC, MP3, M4A, and Opus with comprehensive metadata support.",
+            "Fixed HI_RES quality fallback: Now validates stream URLs to prevent 'Invalid content type' errors and automatically falls back to LOSSLESS.",
+            "Increased download timeouts to 30 minutes to handle large FLAC albums and slow connections.",
+            "Cleaned up Vorbis comments (FLAC/Opus) by removing non-standard YEAR tags for better compatibility with Navidrome/Jellyfin.",
+            "Temporarily disabled the 'My Library' feature for maintenance."
+        ]
+    },
+    {
         version: "1.2.6",
         date: "2025-12-21",
         title: "Mobile Responsive UI",

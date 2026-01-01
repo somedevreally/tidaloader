@@ -3,20 +3,20 @@ import { useState, useEffect } from "preact/hooks";
 import { api } from "../../api/client";
 import { useToastStore } from "../../stores/toastStore";
 
-// Extract playlist UUID from a Tidal URL or raw UUID
+
 function extractPlaylistUuid(input) {
     if (!input) return null;
     const trimmed = input.trim();
 
-    // UUID pattern (8-4-4-4-12 format)
+    
     const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
-    // Check if it's already a raw UUID
+    
     if (uuidPattern.test(trimmed)) {
         return trimmed;
     }
 
-    // Extract UUID from Tidal playlist URLs
+    
     const urlMatch = trimmed.match(/tidal\.com\/(?:browse\/)?playlist\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
     if (urlMatch) {
         return urlMatch[1];
@@ -30,16 +30,16 @@ export function PlaylistSearch({ onSyncStarted }) {
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState([]);
     const [officialOnly, setOfficialOnly] = useState(false);
-    const [selectedPlaylist, setSelectedPlaylist] = useState(null); // For modal
+    const [selectedPlaylist, setSelectedPlaylist] = useState(null); 
     const addToast = useToastStore((state) => state.addToast);
 
     const handleSearch = async () => {
         if (!query.trim()) return;
 
-        // Check if query is a URL or UUID
+        
         const extractedUuid = extractPlaylistUuid(query);
         if (extractedUuid) {
-            // Fetch playlist directly and show it as a result
+            
             setLoading(true);
             setResults([]);
             try {
@@ -85,7 +85,7 @@ export function PlaylistSearch({ onSyncStarted }) {
     const [monitoredUuids, setMonitoredUuids] = useState(new Set());
 
     useEffect(() => {
-        // Fetch monitored playlists to know what is already synced
+        
         api.getMonitoredPlaylists().then(list => {
             setMonitoredUuids(new Set(list.map(p => p.uuid)));
         }).catch(err => console.error("Failed to load monitored status", err));
