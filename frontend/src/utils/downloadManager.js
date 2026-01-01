@@ -171,7 +171,7 @@ class DownloadManager {
    */
   async addToServerQueue(tracks) {
     try {
-      const { quality, organizationTemplate, groupCompilations, runBeets, embedLyrics } =
+      const { quality, organizationTemplate, useMusicBrainz, runBeets, embedLyrics } =
         useDownloadStore.getState();
 
       // Transform tracks to API format
@@ -187,10 +187,11 @@ class DownloadManager {
         quality: quality || "HIGH",
         target_format: null,
         bitrate_kbps: null,
-        run_beets: runBeets || false,
+        // If MusicBrainz is enabled, disable beets (MusicBrainz is better)
+        run_beets: useMusicBrainz ? false : (runBeets || false),
         embed_lyrics: embedLyrics || false,
         organization_template: organizationTemplate || "{Artist}/{Album}/{TrackNumber} - {Title}",
-        group_compilations: groupCompilations !== false,
+        use_musicbrainz: useMusicBrainz !== false,
         ...(track.tidal_track_id && { tidal_track_id: String(track.tidal_track_id) }),
         ...(track.tidal_artist_id && { tidal_artist_id: String(track.tidal_artist_id) }),
         ...(track.tidal_album_id && { tidal_album_id: String(track.tidal_album_id) }),

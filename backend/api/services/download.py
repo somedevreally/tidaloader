@@ -10,6 +10,7 @@ from api.services.audio import transcode_to_mp3, transcode_to_opus, write_metada
 from api.services.files import organize_file_by_metadata
 from api.services.beets import run_beets_import
 from api.services.lyrics import embed_lyrics_with_ffmpeg
+from api.services.musicbrainz import enhance_metadata_with_musicbrainz
 from queue_manager import queue_manager
 
 async def download_file_async(
@@ -21,7 +22,8 @@ async def download_file_async(
     organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}",
     group_compilations: bool = True,
     run_beets: bool = False,
-    embed_lyrics: bool = False
+    embed_lyrics: bool = False,
+    use_musicbrainz: bool = True
 ):
     processed_path = filepath
     try:
@@ -32,8 +34,15 @@ async def download_file_async(
         
         download_state_manager.set_downloading(track_id, 0, metadata)
         
+        # Use generous timeouts for large FLAC files
+        timeout = aiohttp.ClientTimeout(
+            total=1800,      # 30 minutes total
+            connect=30,      # 30 seconds to connect
+            sock_read=120    # 2 minutes per chunk read
+        )
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(stream_url, timeout=aiohttp.ClientTimeout(total=300)) as response:
+            async with session.get(stream_url, timeout=timeout) as response:
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}"
                     log_error(f"Download failed: {error_msg}")
@@ -44,7 +53,44 @@ async def download_file_async(
                         del active_downloads[track_id]
                     return
                 
+                # Validate content-type to detect XML error responses
+                content_type = response.headers.get('content-type', '').lower()
+                if 'xml' in content_type or 'text' in content_type:
+                    error_msg = f"Invalid content type: {content_type} (likely quality unavailable)"
+                    log_error(f"Download failed: {error_msg}")
+                    if track_id in active_downloads:
+                        active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
+                        download_state_manager.set_failed(track_id, error_msg, metadata)
+                        await asyncio.sleep(5)
+                        del active_downloads[track_id]
+                    return
+                
                 total_size = int(response.headers.get('content-length', 0))
+                
+                # Additional validation: tiny files are likely errors
+                if total_size > 0 and total_size < 10000:
+                    # Likely an error XML, read and check
+                    content_preview = await response.content.read(500)
+                    if content_preview.startswith(b'<?xml') or b'<Error>' in content_preview:
+                        error_msg = "Received error response instead of audio (quality likely unavailable)"
+                        log_error(f"Download failed: {error_msg}")
+                        if track_id in active_downloads:
+                            active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
+                            download_state_manager.set_failed(track_id, error_msg, metadata)
+                            await asyncio.sleep(5)
+                            del active_downloads[track_id]
+                        return
+                    # If it passed, we need to re-request since we consumed part of the stream
+                    # For now, treat tiny files as suspicious and fail
+                    error_msg = f"File too small ({total_size} bytes), likely invalid"
+                    log_error(f"Download failed: {error_msg}")
+                    if track_id in active_downloads:
+                        active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
+                        download_state_manager.set_failed(track_id, error_msg, metadata)
+                        await asyncio.sleep(5)
+                        del active_downloads[track_id]
+                    return
+                
                 downloaded = 0
                 
                 # Ensure the directory exists
@@ -110,6 +156,14 @@ async def download_file_async(
                 metadata.setdefault('file_ext', filepath.suffix)
         
         if metadata:
+            # Enhance metadata with MusicBrainz for comprehensive tagging (if enabled)
+            if use_musicbrainz:
+                log_step("4/4", "Enhancing metadata with MusicBrainz...")
+                try:
+                    metadata = await enhance_metadata_with_musicbrainz(metadata)
+                except Exception as e:
+                    log_warning(f"MusicBrainz enhancement failed: {e}")
+            
             log_step("4/4", "Writing metadata tags...")
             await write_metadata_tags(processed_path, metadata)
             

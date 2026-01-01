@@ -30,8 +30,8 @@ export function SettingsPanel() {
     const organizationTemplate = useDownloadStore((state) => state.organizationTemplate);
     const setOrganizationTemplate = useDownloadStore((state) => state.setOrganizationTemplate);
 
-    const groupCompilations = useDownloadStore((state) => state.groupCompilations);
-    const setGroupCompilations = useDownloadStore((state) => state.setGroupCompilations);
+    const useMusicBrainz = useDownloadStore((state) => state.useMusicBrainz);
+    const setUseMusicBrainz = useDownloadStore((state) => state.setUseMusicBrainz);
 
     const runBeets = useDownloadStore((state) => state.runBeets);
     const setRunBeets = useDownloadStore((state) => state.setRunBeets);
@@ -107,30 +107,35 @@ export function SettingsPanel() {
                 {/* Toggles */}
                 <div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-alt transition-colors">
                     <div class="space-y-0.5">
-                        <label class="text-sm font-semibold text-text cursor-pointer" onClick={() => setGroupCompilations(!groupCompilations)}>Group Compilations</label>
-                        <p class="text-xs text-text-muted">Put tracks in "Compilations" folder if Various Artists</p>
+                        <label class="text-sm font-semibold text-text cursor-pointer" onClick={() => setUseMusicBrainz(!useMusicBrainz)}>MusicBrainz Tagging</label>
+                        <p class="text-xs text-text-muted">Fetch accurate metadata (genre, ISRC, MBIDs) from MusicBrainz</p>
                     </div>
                     <label class="relative inline-flex items-center cursor-pointer">
                         <input
                             type="checkbox"
-                            checked={groupCompilations}
-                            onChange={(e) => setGroupCompilations(e.target.checked)}
+                            checked={useMusicBrainz}
+                            onChange={(e) => setUseMusicBrainz(e.target.checked)}
                             class="sr-only peer"
                         />
                         <div class="w-11 h-6 bg-surface peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                     </label>
                 </div>
 
-                <div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-alt transition-colors">
+                <div class={`flex items-center justify-between p-2 rounded-lg transition-colors ${useMusicBrainz ? 'opacity-50 cursor-not-allowed' : 'hover:bg-surface-alt'}`}>
                     <div class="space-y-0.5">
-                        <label class="text-sm font-semibold text-text cursor-pointer" onClick={() => setRunBeets(!runBeets)}>Beets Integration</label>
-                        <p class="text-xs text-text-muted">Run "beet import" after download (requires beets)</p>
+                        <label class={`text-sm font-semibold text-text ${useMusicBrainz ? 'cursor-not-allowed' : 'cursor-pointer'}`} onClick={() => !useMusicBrainz && setRunBeets(!runBeets)}>Beets Integration</label>
+                        <p class="text-xs text-text-muted">
+                            {useMusicBrainz
+                                ? "Disabled when MusicBrainz is enabled"
+                                : "Run \"beet import\" after download (requires beets)"}
+                        </p>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
+                    <label class={`relative inline-flex items-center ${useMusicBrainz ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                         <input
                             type="checkbox"
-                            checked={runBeets}
+                            checked={runBeets && !useMusicBrainz}
                             onChange={(e) => setRunBeets(e.target.checked)}
+                            disabled={useMusicBrainz}
                             class="sr-only peer"
                         />
                         <div class="w-11 h-6 bg-surface peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>

@@ -9,7 +9,7 @@ import { WeeklyJamsGenerator } from "./components/WeeklyJamsGenerator";
 import { SpotifyDownloader } from "./components/SpotifyDownloader";
 import { DownloadQueuePopout } from "./components/DownloadQueuePopout";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { LibraryPage } from "./components/LibraryPage";
+// import { LibraryPage } from "./components/LibraryPage";  // Temporarily disabled
 import { Toast } from "./components/Toast";
 import { ThemePicker } from "./components/ThemePicker";
 import { ReleaseNotes } from "./components/ReleaseNotes";
@@ -184,6 +184,7 @@ export function App() {
                         <span class="sm:hidden">Playlists</span>
                         <span class="hidden sm:inline">Tidal Playlists</span>
                     </button>
+                    {/* Library tab temporarily disabled
                     <button
                         class={`px-3 sm:px-6 py-2 sm:py-3 font-medium rounded-t-lg transition-all duration-200 whitespace-nowrap text-sm sm:text-base flex-shrink-0 ${activeTab === "library"
                             ? "bg-surface text-primary border-b-2 border-primary -mb-px"
@@ -194,6 +195,7 @@ export function App() {
                         <span class="sm:hidden">Library</span>
                         <span class="hidden sm:inline">My Library</span>
                     </button>
+                    */}
                 </nav>
 
                 <main class="card p-3 sm:p-6 mb-6 min-h-[300px] sm:min-h-[400px]">
@@ -201,7 +203,7 @@ export function App() {
                     {activeTab === "weekly-jams" && <WeeklyJamsGenerator />}
                     {activeTab === "spotify" && <SpotifyDownloader />}
                     {activeTab === "playlists" && <TidalPlaylists />}
-                    {activeTab === "library" && <LibraryPage />}
+                    {/* {activeTab === "library" && <LibraryPage />} */}
                 </main>
             </div>
             <NyanCatEasterEgg />

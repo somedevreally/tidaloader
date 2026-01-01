@@ -11,7 +11,7 @@ export const useDownloadStore = create(
       quality: "LOSSLESS",
       maxConcurrent: 3,
       organizationTemplate: "{Artist}/{Album}/{TrackNumber} - {Title}",
-      groupCompilations: true,
+      useMusicBrainz: true,
       runBeets: false,
       embedLyrics: false,
 
@@ -206,8 +206,8 @@ export const useDownloadStore = create(
         set({ organizationTemplate: template });
         get().saveSettingsToServer();
       },
-      setGroupCompilations: (enabled) => {
-        set({ groupCompilations: enabled });
+      setUseMusicBrainz: (enabled) => {
+        set({ useMusicBrainz: enabled });
         get().saveSettingsToServer();
       },
       setRunBeets: (enabled) => {

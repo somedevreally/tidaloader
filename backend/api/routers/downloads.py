@@ -263,6 +263,26 @@ async def download_track_server_side(
                 metadata['artist'] = request.artist
             
             album_data = track_data.get('album', {})
+            
+            # Fallback for date if streamStartDate is missing (Issue #38)
+            if not metadata['date'] and isinstance(album_data, dict):
+                 metadata['date'] = album_data.get('releaseDate') or str(album_data.get('releaseYear') or '')
+            
+            # Second fallback: Fetch extended metadata (Issue #38 persistent)
+            if not metadata['date']:
+                 log_info(f"Date missing, fetching extended metadata for track {request.track_id}...")
+                 try:
+                     extended_data = tidal_client.get_track_metadata(request.track_id)
+                     if extended_data:
+                         if extended_data.get('streamStartDate'):
+                             metadata['date'] = extended_data.get('streamStartDate').split('T')[0]
+                         
+                         if not metadata['date']:
+                             ext_album = extended_data.get('album', {})
+                             if isinstance(ext_album, dict):
+                                 metadata['date'] = ext_album.get('releaseDate') or str(ext_album.get('releaseYear') or '')
+                 except Exception as e:
+                     log_warning(f"Failed to fetch extended metadata: {e}")
             if isinstance(album_data, dict) and album_data.get('title'):
                 metadata['album'] = album_data.get('title')
                 metadata['album_artist'] = album_data.get('artist', {}).get('name') if isinstance(album_data.get('artist'), dict) else None
@@ -425,6 +445,7 @@ class QueueTrackItem(BaseModel):
     embed_lyrics: bool = False
     organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
     group_compilations: bool = True
+    use_musicbrainz: bool = True
 
 
 class QueueAddRequestModel(BaseModel):
@@ -469,6 +490,7 @@ async def add_to_queue(
             embed_lyrics=track.embed_lyrics,
             organization_template=track.organization_template,
             group_compilations=track.group_compilations,
+            use_musicbrainz=track.use_musicbrainz,
             added_by=username
         )
         items.append(item)
@@ -559,6 +581,35 @@ async def get_queue_settings(username: str = Depends(require_auth)):
 # QUEUE ITEM PROCESSOR
 # ============================================================================
 
+import aiohttp
+
+async def validate_stream_url(stream_url: str) -> bool:
+    """
+    Validate that a stream URL returns audio content (not XML error).
+    Uses a HEAD request to check content-type before downloading.
+    """
+    if not stream_url:
+        return False
+    
+    try:
+        timeout = aiohttp.ClientTimeout(total=15, connect=10)
+        async with aiohttp.ClientSession() as session:
+            async with session.head(stream_url, timeout=timeout, allow_redirects=True) as response:
+                if response.status != 200:
+                    return False
+                content_type = response.headers.get('content-type', '').lower()
+                # Valid audio content types
+                if any(t in content_type for t in ['audio/', 'application/octet-stream', 'binary']):
+                    return True
+                # XML or text = error response
+                if 'xml' in content_type or 'text' in content_type:
+                    return False
+                # Unknown content type - assume valid if not explicitly bad
+                return True
+    except Exception:
+        # If HEAD fails, try anyway (some servers don't support HEAD)
+        return True
+
 async def process_queue_item(item: QueueItem):
     """
     Process a single queue item by downloading the track.
@@ -588,6 +639,28 @@ async def process_queue_item(item: QueueItem):
         else:
             track_data = track_info 
 
+        # Get stream URL with quality fallback for HI_RES/HI_RES_LOSSLESS
+        stream_url = extract_stream_url(track_info)
+        
+        # Validate the stream URL returns actual audio content (not XML error)
+        # This catches cases where API returns a URL but the quality isn't actually available
+        if stream_url and source_quality in ('HI_RES', 'HI_RES_LOSSLESS'):
+            is_valid = await validate_stream_url(stream_url)
+            if not is_valid:
+                log_warning(f"[Queue] {source_quality} stream returns invalid content for {item.title}, falling back to LOSSLESS")
+                stream_url = None  # Trigger fallback below
+        
+        # Fallback: If HI_RES or HI_RES_LOSSLESS requested but no stream URL found (or invalid), try LOSSLESS
+        if not stream_url and source_quality in ('HI_RES', 'HI_RES_LOSSLESS'):
+            log_warning(f"[Queue] {source_quality} not available for {item.title}, falling back to LOSSLESS")
+            source_quality = 'LOSSLESS'
+            track_info = tidal_client.get_track(track_id, source_quality)
+            if track_info:
+                if isinstance(track_info, list) and len(track_info) > 0:
+                    track_data = track_info[0]
+                else:
+                    track_data = track_info
+                stream_url = extract_stream_url(track_info)
 
         metadata = {
             'quality': requested_quality,
@@ -623,6 +696,25 @@ async def process_queue_item(item: QueueItem):
             metadata['disc_number'] = track_data.get('volumeNumber')
             metadata['date'] = track_data.get('streamStartDate', '').split('T')[0] if track_data.get('streamStartDate') else None
             
+            # Fallback for date if streamStartDate is missing (Issue #38)
+            if not metadata['date'] and isinstance(album_data, dict):
+                 metadata['date'] = album_data.get('releaseDate') or str(album_data.get('releaseYear') or '')
+
+            # Second fallback: Fetch extended metadata (Issue #38 persistent)
+            if not metadata['date']:
+                 try:
+                     extended_data = tidal_client.get_track_metadata(track_id)
+                     if extended_data:
+                         if extended_data.get('streamStartDate'):
+                             metadata['date'] = extended_data.get('streamStartDate').split('T')[0]
+                         
+                         if not metadata['date']:
+                             ext_album = extended_data.get('album', {})
+                             if isinstance(ext_album, dict):
+                                 metadata['date'] = ext_album.get('releaseDate') or str(ext_album.get('releaseYear') or '')
+                 except Exception:
+                     pass
+            
             # Update artist ID from track data if available
             artist_data = track_data.get('artist', {})
             if isinstance(artist_data, dict) and artist_data.get('id'):
@@ -652,8 +744,7 @@ async def process_queue_item(item: QueueItem):
         log_info(f"  Album ID: {metadata.get('tidal_album_id')}")
         log_info(f"  From Queue Item: {bool(item.tidal_artist_id)}")
         
-        # Get stream URL
-        stream_url = extract_stream_url(track_info)
+        # Verify stream URL was found (after potential fallback)
         if not stream_url:
             raise Exception("Stream URL not found")
         
@@ -724,7 +815,8 @@ async def process_queue_item(item: QueueItem):
             item.organization_template,
             item.group_compilations,
             item.run_beets,
-            item.embed_lyrics
+            item.embed_lyrics,
+            item.use_musicbrainz
         )
         
         # Mark as completed in queue manager

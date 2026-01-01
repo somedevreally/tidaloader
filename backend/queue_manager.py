@@ -54,6 +54,7 @@ class QueueItem:
     embed_lyrics: bool = False
     organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
     group_compilations: bool = True
+    use_musicbrainz: bool = True  # Enable MusicBrainz tagging by default
     auto_clean: bool = False
     
     def __post_init__(self):
