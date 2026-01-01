@@ -1,5 +1,15 @@
 export const releaseNotes = [
     {
+        version: "1.3.1",
+        date: "2026-01-01",
+        title: "Standardized Lyrics & Compatibility Fixes",
+        changes: [
+            "Improved Tagging: Synced lyrics are now correctly embedded in SYNCEDLYRICS (FLAC/Opus) and SYLT (MP3) tags.",
+            "Enhanced Plain Lyrics: Unsynced lyrics now use standard LYRICS (FLAC/Opus) and USLT (MP3) metadata frames.",
+            "Fixed non-standard lyrics tagging that caused issues with external media servers."
+        ]
+    },
+    {
         version: "1.3.0",
         date: "2026-01-01",
         title: "Jellyfin Integration & Enhanced Settings",

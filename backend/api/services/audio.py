@@ -6,7 +6,7 @@ import aiohttp
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.mp3 import MP3
-from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+from mutagen.id3 import ID3, APIC, ID3NoHeaderError, Encoding
 from mutagen.easyid3 import EasyID3
 from mutagen.oggopus import OggOpus
 
@@ -383,7 +383,7 @@ async def write_mp3_metadata(filepath: Path, metadata: dict):
         except Exception as e:
             log_warning(f"Failed to add custom TXXX tags: {e}")
         
-        await fetch_and_store_lyrics(filepath, metadata, None)
+        await fetch_and_store_lyrics(filepath, metadata, None, is_mp3=True)
         
         if metadata.get('cover_url'):
             try:
