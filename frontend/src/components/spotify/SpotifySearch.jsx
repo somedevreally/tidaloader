@@ -105,13 +105,15 @@ function PreviewModal({ playlist, onClose }) {
 }
 
 const MonitorModal = ({ playlist, onClose, onAdd }) => {
-    const [frequency, setFrequency] = useState("daily");
+    const [frequency, setFrequency] = useState("manual");
     const [quality, setQuality] = useState("LOSSLESS");
-    const [useFolder, setUseFolder] = useState(true);
-    const [loading, setLoading] = useState(false);
+    const [usePlaylistFolder, setUsePlaylistFolder] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const addToast = useToastStore((state) => state.addToast);
 
-    const handleSubmit = async () => {
-        setLoading(true);
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
         try {
             await onAdd({
                 uuid: playlist.id,
@@ -120,47 +122,48 @@ const MonitorModal = ({ playlist, onClose, onAdd }) => {
                 quality,
                 source: "spotify",
                 extra_config: { spotify_id: playlist.id },
-                use_playlist_folder: useFolder
+                use_playlist_folder: usePlaylistFolder
             });
             onClose();
         } catch (e) {
             console.error(e);
+            // Error toast handled by caller
         } finally {
-            setLoading(false);
+            setSubmitting(false);
         }
     };
 
     return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn">
-            <div class="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4 animate-scaleUp">
-                <h3 class="text-xl font-bold text-text mb-4">Monitor Playlist</h3>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div class="bg-surface card p-6 w-full max-w-md space-y-4 animate-scale-in">
+                <h2 class="text-xl font-bold text-text">Sync Playlist</h2>
+                <p class="text-text-muted">
+                    Setup synchronization for <span class="text-text font-medium">{playlist.name}</span>.
+                    Currently supports generating M3U8 playlists.
+                </p>
 
-                <div class="mb-4 flex items-center gap-4">
-                    <img src={playlist.image} alt={playlist.name} class="w-16 h-16 rounded-md object-cover bg-surface-alt" />
+                <form onSubmit={handleSubmit} class="space-y-4">
                     <div>
-                        <p class="font-semibold text-text">{playlist.name}</p>
-                        <p class="text-sm text-text-muted">{playlist.owner}</p>
-                        <p class="text-xs text-text-muted mt-1">{playlist.track_count} tracks</p>
-                    </div>
-                </div>
-
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-text-muted mb-1.5 uppercase tracking-wider">Sync Frequency</label>
+                        <label class="block text-sm font-medium text-text mb-1">Update Frequency</label>
                         <select
                             value={frequency}
                             onChange={(e) => setFrequency(e.target.value)}
                             class="input-field w-full"
                         >
-                            <option value="manual">Manual (No Auto-Sync)</option>
-                            <option value="daily">Daily (Every 24h)</option>
-                            <option value="weekly">Weekly (Every 7 days)</option>
+                            <option value="manual">Manual (One-time)</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
                             <option value="monthly">Monthly</option>
                         </select>
+                        <p class="text-xs text-text-muted mt-1">
+                            {frequency === "manual"
+                                ? "Playlist will only be updated when you click 'Sync Now'."
+                                : "Playlist will be automatically updated in the background."}
+                        </p>
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold text-text-muted mb-1.5 uppercase tracking-wider">Quality</label>
+                        <label class="block text-sm font-medium text-text mb-1">Quality</label>
                         <select
                             value={quality}
                             onChange={(e) => setQuality(e.target.value)}
@@ -168,29 +171,45 @@ const MonitorModal = ({ playlist, onClose, onAdd }) => {
                         >
                             <option value="LOW">Low (96kbps AAC)</option>
                             <option value="HIGH">High (320kbps AAC)</option>
-                            <option value="LOSSLESS">Lossless (1411kbps FLAC)</option>
-                            <option value="HI_RES">Hi-Res (Max Available)</option>
+                            <option value="LOSSLESS">Lossless (FLAC 16bit)</option>
+                            <option value="HI_RES">Hi-Res (FLAC 24bit)</option>
                         </select>
                     </div>
 
-                    <div class="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="useFolder"
-                            checked={useFolder}
-                            onChange={(e) => setUseFolder(e.target.checked)}
-                            class="rounded border-border bg-surface-alt text-primary focus:ring-primary"
-                        />
-                        <label for="useFolder" class="text-sm text-text">Use Playlist Folder</label>
+                    <div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={usePlaylistFolder}
+                                onChange={(e) => setUsePlaylistFolder(e.target.checked)}
+                                class="rounded border-border text-primary focus:ring-primary h-4 w-4"
+                            />
+                            <span class="text-sm font-medium text-text">Download tracks to playlist folder</span>
+                        </label>
+                        <p class="text-xs text-text-muted mt-1 ml-6">
+                            Creates a standalone folder "{playlist.name}" containing all tracks.
+                            Useful for keeping files together, but duplicates tracks if they already exist in library.
+                        </p>
                     </div>
-                </div>
 
-                <div class="flex justify-end gap-3 mt-6">
-                    <button onClick={onClose} class="btn-ghost" disabled={loading}>Cancel</button>
-                    <button onClick={handleSubmit} class="btn-primary" disabled={loading}>
-                        {loading ? 'Adding...' : 'Start Monitoring'}
-                    </button>
-                </div>
+                    <div class="flex gap-3 justify-end mt-6">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            class="px-4 py-2 text-text-muted hover:text-text hover:bg-surface-alt rounded-lg"
+                            disabled={submitting}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            class="btn-primary"
+                            disabled={submitting}
+                        >
+                            {submitting ? "Starting..." : "Start Sync"}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );
