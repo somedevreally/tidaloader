@@ -33,6 +33,22 @@ async def search_spotify_playlists(
     finally:
         await client.close()
 
+@router.get("/api/spotify/playlist/{playlist_id}")
+async def get_spotify_playlist_tracks(
+    playlist_id: str,
+    user: str = Depends(require_auth)
+):
+    """Get tracks from a Spotify playlist"""
+    client = SpotifyClient()
+    try:
+        tracks, _ = await client.get_playlist_tracks(playlist_id)
+        return {"items": tracks}
+    except Exception as e:
+        logger.error(f"Failed to fetch playlist tracks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await client.close()
+
 def extract_spotify_id(url: str) -> str:
     # Match playlist ID from various formats
     # https://open.spotify.com/playlist/37i9dQZF1DX5Ejj077clxu

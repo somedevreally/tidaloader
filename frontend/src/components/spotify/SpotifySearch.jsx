@@ -39,18 +39,9 @@ function PreviewModal({ playlist, onClose }) {
 
     useEffect(() => {
         const loadTracks = async () => {
-            // For Spotify, we don't have a direct "get playlist tracks" endpoint that returns simple JSON 
-            // without triggering the 'generate' process which is heavy. 
-            // However, for the purpose of a preview, we can use the 'generate' endpoint WITHOUT validation (shouldValidate=false)
-            // which is faster and returns the track list.
-            // Ideally we would use the `api.getPlaylist` equivalent but that is for Tidal.
-            // We will reuse `api.generateSpotifyPlaylist` with validation off.
             try {
-                // Determine URL. searching gives us IDs, we need to reconstruct URL or just pass ID if backend supports it.
-                // The backend `generate_spotify_playlist` expects a URL.
-                const url = `https://open.spotify.com/playlist/${playlist.id}`;
-                const result = await api.generateSpotifyPlaylist(url, false);
-                setTracks(result.tracks || []);
+                const result = await api.getSpotifyPlaylist(playlist.id);
+                setTracks(result.items || []);
             } catch (e) {
                 console.error("Preview fetch error:", e);
                 setError(e.message);

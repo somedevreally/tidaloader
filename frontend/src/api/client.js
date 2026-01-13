@@ -122,6 +122,13 @@ class ApiClient {
     }
 
     /**
+     * Get Spotify playlist tracks
+     */
+    getSpotifyPlaylist(playlistId) {
+        return this.get(`/spotify/playlist/${playlistId}`);
+    }
+
+    /**
      * Get album tracks
      */
     getAlbumTracks(albumId) {
