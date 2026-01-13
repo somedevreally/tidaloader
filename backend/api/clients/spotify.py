@@ -116,10 +116,24 @@ class SpotifyClient:
             logger.error(f"Failed to fetch playlist: {e}")
             return [], False
 
+    def _fetch_playlist_count(self, playlist_id: str) -> int:
+        """
+        Fetch just the track count for a playlist using playlist_info.
+        """
+        try:
+            # Import here to avoid circular imports or context issues
+            from spotapi import Public
+            iterator = Public.playlist_info(playlist_id)
+            first_chunk = next(iterator)
+            return first_chunk.get('totalCount', 0)
+        except Exception:
+            return 0
+
     def _search_playlists_sync(self, query: str, limit: int = 10) -> List[SpotifyPlaylist]:
         """
         Synchronous method to search for playlists.
         Uses spotapi.song.Song.query_songs manually to extract playlist results.
+        Then fetches track counts in parallel.
         """
         try:
             # Import internals here to avoid top-level issues if layout changes
@@ -127,12 +141,13 @@ class SpotifyClient:
             from spotapi.song import Song
             
             client = client_pool.get()
+            playlists = []
+            
             try:
                 song_api = Song(client=client)
                 # query_songs returns the raw response dict
                 response = song_api.query_songs(query, limit=limit)
                 
-                playlists = []
                 if "data" in response and "searchV2" in response["data"]:
                     data = response["data"]["searchV2"]
                     if "playlists" in data and "items" in data["playlists"]:
@@ -162,12 +177,30 @@ class SpotifyClient:
                                 name=p_data.get("name", "Unknown"),
                                 owner=owner_name,
                                 image=image_url,
-                                track_count=0 # Not readily available in search summary usually
+                                track_count=0 # Placeholder, will fetch below
                             ))
                             
-                return playlists
             finally:
                 client_pool.put(client)
+
+            # Fetch track counts in parallel
+            if playlists:
+                with ThreadPoolExecutor(max_workers=min(len(playlists), 10)) as executor:
+                    # Create a map of future -> playlist
+                    future_to_playlist = {
+                        executor.submit(self._fetch_playlist_count, p.id): p 
+                        for p in playlists
+                    }
+                    
+                    for future in future_to_playlist:
+                        p = future_to_playlist[future]
+                        try:
+                            count = future.result()
+                            p.track_count = count
+                        except Exception as e:
+                            logger.warn(f"Failed to fetch count for playlist {p.id}: {e}")
+                            
+            return playlists
                 
         except Exception as e:
             logger.error(f"Error searching spotify playlists: {e}")
