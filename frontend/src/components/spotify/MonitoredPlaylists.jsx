@@ -103,7 +103,7 @@ export function MonitoredPlaylists() {
                             <h3 class="font-bold text-text text-lg">{playlist.name}</h3>
                             <div class="flex flex-wrap gap-2 mt-1">
                                 <span class="badge bg-primary/10 text-primary border-primary/20">
-                                    {playlist.frequency.charAt(0).toUpperCase() + playlist.frequency.slice(1)}
+                                    {playlist.sync_frequency.charAt(0).toUpperCase() + playlist.sync_frequency.slice(1)}
                                 </span>
                                 <span class="badge bg-surface-alt text-text-muted border-border">
                                     {playlist.quality}
