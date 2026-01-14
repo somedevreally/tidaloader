@@ -218,6 +218,142 @@ const MonitorModal = ({ playlist, onClose, onAdd }) => {
     );
 };
 
+
+
+function SyncProgressModal({ progressId, onClose }) {
+    const [messages, setMessages] = useState([]);
+    const [status, setStatus] = useState("active"); // active, complete, error
+    const [progress, setProgress] = useState({ current: 0, total: 0 });
+
+    const [pollError, setPollError] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+        // console.log("[DEBUG] VERSION: Polling Loading...");
+
+        const poll = async () => {
+            try {
+                // Polling using authenticated client
+                console.log(`[POLL] Polling ID: ${progressId}`);
+                const data = await api.getSpotifySyncProgress(progressId);
+                console.log("[POLL] Data:", data);
+
+                if (isMounted) {
+                    setPollError(false);
+                    // Update state from backend
+                    if (data.status) setStatus(data.status);
+
+                    // Messages
+                    if (data.messages) setMessages(data.messages);
+
+                    // Progress
+                    if (data.current !== undefined) {
+                        setProgress({
+                            current: data.current || 0,
+                            total: data.total || 0,
+                            matches: data.matches || 0
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn("Polling error", e);
+                if (isMounted) setPollError(true);
+            }
+        };
+
+        const interval = setInterval(poll, 1000);
+        poll();
+
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [progressId]);
+
+    const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+
+    return (
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+            <div class="bg-surface card w-full max-w-lg shadow-2xl rounded-xl flex flex-col max-h-[80vh]">
+                <div class="p-6 border-b border-border">
+                    <h3 class="text-xl font-bold text-text">Importing Playlist (Rapid Sync)</h3>
+                    <p class="text-text-muted text-sm">Synchronizing tracks from Spotify...</p>
+                </div>
+
+                <div class="p-6 flex-1 overflow-y-auto space-y-4">
+                    {/* Progress Bar */}
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-sm text-text-muted">
+                            <span>Processing Tracks</span>
+                            <span>{percent}% ({progress.current}/{progress.total})</span>
+                        </div>
+                        <div class="h-2 bg-surface-alt rounded-full overflow-hidden">
+                            <div
+                                class="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${percent}%` }}
+                            />
+                        </div>
+
+                        {/* Validation Stats */}
+                        <div class="flex items-center justify-between text-xs mt-2 px-1">
+                            <div class="text-text-muted">
+                                Connection: <span class={status === 'active' ? 'text-green-400' : 'text-text-muted'}>{status === 'active' ? 'Connected' : 'Closed'}</span>
+                            </div>
+                            {progress.total > 0 && (
+                                <div class="font-medium text-text">
+                                    Matches Found: <span class="text-green-400">{progress.matches || 0}</span> <span class="text-text-muted">/ {progress.current} analyzed</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Log */}
+                    <div class="bg-black/20 rounded-lg p-3 h-48 overflow-y-auto font-mono text-xs space-y-1">
+                        {pollError && (
+                            <div class="p-2 bg-red-500/20 text-red-500 border border-red-500/50 rounded mb-2">
+                                <strong>Connection Error:</strong> {pollError.toString()}
+                            </div>
+                        )}
+                        {messages.length === 0 && !pollError && <span class="text-text-muted italic">Waiting for updates...</span>}
+                        {messages.map((msg, i) => (
+                            <div key={i} class={`
+                                ${msg.type === 'error' ? 'text-red-400' : ''}
+                                ${msg.type === 'complete' ? 'text-green-400' : ''}
+                                ${msg.type === 'validating' ? 'text-text-muted' : 'text-text'}
+                            `}>
+                                <span class="opacity-50 mr-2">[{new Date(msg.timestamp * 1000).toLocaleTimeString()}]</span>
+                                {msg.text}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div class="p-6 border-t border-border flex justify-end gap-3">
+                    {/* Always show both buttons. Confirm is disabled until ready. */}
+                    <button
+                        onClick={() => onClose(false, progressId)} // False = Cancel/Delete
+                        class="px-4 py-2 rounded-lg font-medium transition-colors bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                    >
+                        {/* If complete/synced, offer Close. If analyzing/waiting, offer Cancel & Delete. */}
+                        {status === 'complete' || status === 'waiting_confirmation' ? 'Cancel & Delete' : 'Cancel'}
+                    </button>
+
+                    <button
+                        onClick={() => onClose(true, progressId)} // True = Confirm
+                        disabled={status === 'active' || status === 'error'}
+                        class={`px-4 py-2 rounded-lg font-medium transition-colors ${(status === 'active' || status === 'error')
+                            ? 'bg-surface-alt text-text-muted cursor-not-allowed opacity-50'
+                            : 'bg-primary text-white hover:bg-primary-dark'
+                            }`}
+                    >
+                        {status === 'active' ? 'Analyzing...' : 'Confirm Sync'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function SpotifySearch() {
     const [query, setQuery] = useState("");
     const [results, setResults] = useState([]);
@@ -228,15 +364,14 @@ export function SpotifySearch() {
     const [officialOnly, setOfficialOnly] = useState(false);
     const [monitoredUuids, setMonitoredUuids] = useState(new Set());
 
+    // Progress Modal State
+    const [progressContext, setProgressContext] = useState(null); // { id: uuid }
+
     const addToast = useToastStore((state) => state.addToast);
 
     // Fetch monitored playlists on mount to check status
     useEffect(() => {
         api.getMonitoredPlaylists().then(list => {
-            // Store extra_config.spotify_id as the UUID for Spotify playlists
-            // The main 'uuid' in monitored list is the wrapper UUID, but Spotify search returns Spotify IDs.
-            // We need to match based on the stored spotify_id if available, or just check if we can map it.
-            // Actually, in `AddModal` we passed `uuid: playlist.id`, so the MonitoredPlaylist UUID IS the Spotify ID.
             setMonitoredUuids(new Set(list.map(p => p.uuid)));
         }).catch(err => console.error("Failed to load monitored status", err));
     }, []);
@@ -263,6 +398,19 @@ export function SpotifySearch() {
     };
 
     const handleAdd = async (config) => {
+        // Simple manual UUID generator to avoid crypto.randomUUID() issues in non-secure contexts
+        const generateId = () => {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        };
+
+        const progressId = generateId();
+
+        // Open modal immediately with UUID
+        setProgressContext({ id: progressId, uuid: config.uuid });
+
         try {
             await api.monitorPlaylist(
                 config.uuid,
@@ -271,14 +419,19 @@ export function SpotifySearch() {
                 config.quality,
                 config.source,
                 config.extra_config,
-                config.use_playlist_folder
+                config.use_playlist_folder,
+                progressId,
+                true // skipDownload = true (Analyze only)
             );
             addToast(`Started monitoring "${config.name}"`, "success");
-            // Add to local set to update UI instantly
             setMonitoredUuids(prev => new Set(prev).add(config.uuid));
+
+            // Success! The SyncProgressModal stays open until completion/user close.
         } catch (e) {
+            console.error("Monitor playlist failed", e);
             addToast(`Failed to add playlist: ${e.message}`, "error");
-            throw e;
+            setProgressContext(null); // Close popup on immediate failure
+            throw e; // Propagate to MonitorModal to reset loading state
         }
     };
 
@@ -397,6 +550,44 @@ export function SpotifySearch() {
                 <PreviewModal
                     playlist={previewPlaylist}
                     onClose={() => setPreviewPlaylist(null)}
+                />
+            )}
+
+            {progressContext && progressContext.id && (
+                <SyncProgressModal
+                    progressId={progressContext.id}
+                    onClose={async (confirmed, explicitId) => {
+                        const uuid = progressContext.uuid;
+                        // Use explicitId passed back from modal, or fallback to context.id
+                        const pId = explicitId || progressContext.id;
+
+                        setProgressContext(null);
+
+                        if (confirmed) {
+                            try {
+                                // Trigger actual download
+                                // Pass pId to use cached analysis results
+                                await api.syncPlaylist(uuid, pId);
+                                addToast("Sync confirmed. Downloading tracks in background.", "success");
+                            } catch (e) {
+                                console.error(e);
+                                addToast("Failed to start sync: " + e.message, "error");
+                            }
+                        } else {
+                            // Cancelled - delete the monitored playlist
+                            try {
+                                await api.removeMonitoredPlaylist(uuid);
+                                addToast("Import cancelled.", "info");
+                                setMonitoredUuids(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(uuid);
+                                    return next;
+                                });
+                            } catch (e) {
+                                console.error(e);
+                            }
+                        }
+                    }}
                 />
             )}
         </div>

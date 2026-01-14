@@ -21,6 +21,8 @@ from queue_manager import queue_manager, QueueItem
 
 logger = logging.getLogger(__name__)
 
+from api.state import import_cache, import_states
+
 # Persistence file - Store in PLAYLISTS_DIR to survive container rebuilds
 MONITORED_PLAYLISTS_FILE = PLAYLISTS_DIR / "monitored_playlists.json"
 
@@ -166,31 +168,148 @@ class PlaylistManager:
         except Exception as e:
             logger.error(f"Failed to delete playlist file/cover: {e}")
 
-    async def sync_playlist(self, uuid: str) -> Dict[str, Any]:
+    async def sync_playlist(self, uuid: str, progress_id: Optional[str] = None, skip_download: bool = False) -> Dict[str, Any]:
         playlist = self.get_playlist(uuid)
         if not playlist:
             raise ValueError("Playlist not found")
 
         logger.info(f"Syncing playlist: {playlist.name} ({playlist.uuid}) [Source: {playlist.source}]")
         
-        raw_items = []
-        
-        # 1. Fetch tracks based on source
-        if playlist.source == PlaylistSource.LISTENBRAINZ:
-            raw_items = await self._fetch_listenbrainz_items(playlist)
-        elif playlist.source == PlaylistSource.SPOTIFY:
-            raw_items = await self._fetch_spotify_items(playlist)
-        else:
-            raw_items = await self._fetch_tidal_items(playlist)
-            
-        logger.info(f"Fetched {len(raw_items)} items for playlist {playlist.uuid}")
-        
-        if not raw_items:
-            logger.warning(f"No tracks found for playlist {playlist.name}")
-            return {'status': 'empty', 'added': 0}
+        # DEBUG CACHE
+        # DEBUG CACHE
+        logger.info(f"DEBUG: sync_playlist called with progress_id={progress_id}, skip_download={skip_download}")
+        logger.info(f"DEBUG: Cache keys: {list(import_cache.keys())}")
+        if progress_id:
+            logger.info(f"DEBUG: Is {progress_id} in cache? {progress_id in import_cache}")
 
-        # 2. Process tracks & M3U8 content
-        return await self._process_playlist_items(playlist, raw_items)
+        # Helper to emit progress
+        # Helper to emit progress (Queue + State)
+        async def emit_progress(msg_type: str, message: str, **kwargs):
+            if progress_id:
+                from api.state import lb_progress_queues, import_states
+                
+                payload = {"type": msg_type, "message": message, **kwargs}
+                
+                # 1. Legacy Queue (SSE) - Keep for backward compat or just remove later
+                if progress_id in lb_progress_queues:
+                    await lb_progress_queues[progress_id].put(payload)
+                
+                # 2. Update Direct State (Polling)
+                if progress_id not in import_states:
+                    import_states[progress_id] = {
+                        "status": "active",
+                        "messages": [],
+                        "current": 0,
+                        "total": 0,
+                        "matches": 0
+                    }
+                
+                state = import_states[progress_id]
+                
+                # Append log message
+                state["messages"].append({
+                    "text": message,
+                    "type": msg_type,
+                    "timestamp": payload.get("timestamp", 0) # Service should add timestamp? No, lets add current
+                })
+                # Keep logs manageable
+                if len(state["messages"]) > 50:
+                    state["messages"] = state["messages"][-50:]
+                    
+                # Update counters
+                if "progress" in kwargs:
+                    state["current"] = kwargs["progress"]
+                if "total" in kwargs:
+                    state["total"] = kwargs["total"]
+                if "matches_found" in kwargs:
+                    state["matches"] = kwargs["matches_found"]
+                
+                # Update Status
+                if msg_type == "complete" or msg_type == "analysis_complete":
+                    state["status"] = "waiting_confirmation" if skip_download else "complete"
+                elif msg_type == "error":
+                    state["status"] = "error"
+
+        try:
+            await emit_progress("info", f"Starting analysis for {playlist.name}...")
+            
+            raw_items = []
+            
+            # 1. Fetch tracks based on source
+            # Optimization: Check cache first if confirming
+            
+            # If we are provided a progress_id and we are NOT skipping download, 
+            # it might be a confirmation of a previous analysis.
+            if progress_id and not skip_download and progress_id in import_cache:
+                logger.info(f"Using cached analysis results for {progress_id}")
+                raw_items = import_cache[progress_id]
+                
+                # Restore matches count
+                match_count = len([x for x in raw_items if x.get('tidal_exists') or (isinstance(x.get('item'), dict) and x['item'].get('id'))])
+                
+                # Initialize state if needed (it should exist if we are polling, but might be fresh)
+                if progress_id not in import_states:
+                     import_states[progress_id] = {
+                        "status": "active",
+                        "messages": [],
+                        "current": 0,
+                        "total": len(raw_items),
+                        "matches": match_count
+                    }
+                else:
+                    import_states[progress_id]["matches"] = match_count
+                    import_states[progress_id]["total"] = len(raw_items)
+
+                await emit_progress("info", f"Using cached analysis ({len(raw_items)} items)...", matches_found=match_count)
+            else:
+                # Normal Fetch / Analysis
+                if playlist.source == PlaylistSource.LISTENBRAINZ:
+                    raw_items = await self._fetch_listenbrainz_items(playlist)
+                elif playlist.source == PlaylistSource.SPOTIFY:
+                    raw_items = await self._fetch_spotify_items(playlist, progress_id)
+                else:
+                    raw_items = await self._fetch_tidal_items(playlist)
+                
+                # If this was an analysis run, cache the results
+                if progress_id and skip_download:
+                     import_cache[progress_id] = raw_items
+                     logger.info(f"Cached {len(raw_items)} items for progress_id {progress_id}")
+                
+            logger.info(f"Fetched {len(raw_items)} items for playlist {playlist.uuid}")
+            
+            if not raw_items:
+                logger.warning(f"No tracks found for playlist {playlist.name}")
+                await emit_progress("info", "No tracks found.")
+            
+            # CHECKPOINT: If this is an analyze-only run (Manual Import flow), stop here.
+            if skip_download:
+                logger.info("Skip download requested. Finishing analysis.")
+                await emit_progress("complete", "Analysis complete. Waiting for confirmation.", matches_found=len([x for x in raw_items if x.get('tidal_exists')]))
+                return {"status": "analysis_complete", "count": len(raw_items)}
+
+            await emit_progress("info", f"Processing {len(raw_items)} tracks...")
+
+            # 2. Process tracks & M3U8 content
+            result = await self._process_playlist_items(playlist, raw_items)
+            
+            # Emit completion if we have details
+            if isinstance(result, dict) and 'queued' in result:
+                msg = "Sync complete."
+                if result['queued'] > 0:
+                    msg += f" Queued {result['queued']} downloads."
+                await emit_progress("complete", msg)
+            
+            return result
+        
+        except Exception as e:
+            await emit_progress("error", f"Sync failed: {e}")
+            raise e
+        finally:
+            # Signal end of stream
+            if progress_id:
+                from api.state import lb_progress_queues
+                if progress_id in lb_progress_queues:
+                     await lb_progress_queues[progress_id].put(None)
 
     async def _fetch_tidal_items(self, playlist: MonitoredPlaylist) -> List[Dict]:
         try:
@@ -266,7 +385,7 @@ class PlaylistManager:
             logger.error(f"Failed to fetch ListenBrainz tracks: {e}")
             return []
 
-    async def _fetch_spotify_items(self, playlist: MonitoredPlaylist) -> List[Dict]:
+    async def _fetch_spotify_items(self, playlist: MonitoredPlaylist, progress_id: Optional[str] = None) -> List[Dict]:
         """
         Fetch items from Spotify using the Spotify Service.
         """
@@ -275,8 +394,45 @@ class PlaylistManager:
             
             # Helper to log progress for background tasks
             async def progress_logger(data):
-                 if data.get('type') in ['info', 'complete']:
+                if data.get('type') in ['info', 'complete']:
                     logger.info(f"[Spotify-Sync] {data.get('message')}")
+                 
+                # Forward to progress queue if active
+                if progress_id:
+                    from api.state import lb_progress_queues, import_states
+                    
+                    # Reverted to debug for production
+                    logger.debug(f"DEBUG: progress_logger called for {progress_id}. Data keys: {list(data.keys())}")
+                    
+                    # 1. Backward Compat: Queue
+                    if progress_id in lb_progress_queues:
+                        await lb_progress_queues[progress_id].put(data)
+                        
+                    # 2. Modern: Polling State
+                    if progress_id in import_states:
+                        state = import_states[progress_id]
+                        
+                        # Update counters if present
+                        
+                        # Update counters if present
+                        if "progress" in data:
+                            state["current"] = data["progress"]
+                        if "total" in data:
+                            state["total"] = data["total"]
+                        if "matches_found" in data:
+                            state["matches"] = data["matches_found"]
+                        
+                        # Append message
+                        if data.get("message"):
+                            msg_entry = {
+                                "text": data["message"],
+                                "type": data.get("type", "info"),
+                                "timestamp": data.get("timestamp", 0)
+                            }
+                            state["messages"].append(msg_entry)
+                            # Keep logs manageable
+                            if len(state["messages"]) > 50:
+                                state["messages"] = state["messages"][-50:]
 
             # 'extra_config' should contain 'spotify_id' or we use playlist.uuid if that's where we stored it
             # The MonitorPlaylistRequest uses 'uuid' for the Spotify ID usually?
@@ -298,6 +454,7 @@ class PlaylistManager:
                     continue
                     
                 normalized.append({
+                    'tidal_exists': True, # Required for match counting downstream
                     'item': {
                         'id': int(t['tidal_id']) if str(t['tidal_id']).isdigit() else t['tidal_id'],
                         'title': t['title'],
@@ -586,8 +743,8 @@ class PlaylistManager:
         
         if cover_path.exists():
             # Even if exists locally, we might want to ensure it's in Jellyfin?
-            # Let's try to sync to Jellyfin if configured
-            await self._sync_cover_to_jellyfin(playlist.name, cover_path)
+            # Let's try to sync to Jellyfin if configured (NON-BLOCKING)
+            asyncio.create_task(self._sync_cover_to_jellyfin(playlist.name, cover_path))
             return
 
         # ... (Download logic remains similar but needs source adaptation)
@@ -606,19 +763,19 @@ class PlaylistManager:
                  # Title: Playlist Name (e.g. "Weekly Jams")
                  # Subtitle: User's Name/Initials from playlist name or config
                  
-                 # Typically playlist.name is something like "Philippe - Weekly Jams"
-                 # We want: 
-                 #   Title: Weekly Jams  
-                 #   Subtitle: Philippe
-                 
-                 title = playlist.name
-                 subtitle = ""
+                 # Typically playlist.name is something like "User - Weekly Jams"
+                 #   Title: Weekly Jams
+                 #   Subtitle: User
+                 parts = playlist.name.split(' - ')
+                 if len(parts) > 1:
+                     title = " - ".join(parts[1:])
+                     subtitle = parts[0] # "User"
                  
                  if " - " in playlist.name:
                      parts = playlist.name.split(" - ", 1)
-                     subtitle = parts[0] # "Philippe"
-                     title = parts[1]    # "Weekly Jams"
-                     
+                     subtitle = parts[0] # e.g. "User"
+                     title = parts[1]    # e.g. "Weekly Jams"
+                 
                  logger.info(f"Generating cover for LB playlist: '{title}' (User: {subtitle})")
                  
                  cover_bytes = generator.generate_cover(title, subtitle)
@@ -710,7 +867,8 @@ class PlaylistManager:
                                 await f.write(await resp.read())
                             logger.info(f"Cover saved: {cover_path}")
                             
-                            # Sync deferred to main process
+                            # Sync to Jellyfin (NON-BLOCKING)
+                            asyncio.create_task(self._sync_cover_to_jellyfin(playlist.name, cover_path, scan_wait=True))
                         else:
                             logger.warning(f"Failed cover download: {resp.status} from {image_url}")
             except Exception as e:

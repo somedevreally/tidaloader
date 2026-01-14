@@ -87,44 +87,32 @@ async def generate_spotify_playlist(
     return {"progress_id": progress_id}
 
 @router.get("/api/spotify/progress/{progress_id}")
-async def spotify_progress_stream(
+async def get_spotify_progress(
     progress_id: str,
-    username: str = Depends(require_auth_stream)
+    user: str = Depends(require_auth)
 ):
-    async def event_generator():
-        if progress_id not in lb_progress_queues:
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid progress ID'})}\n\n"
-            return
-        
-        queue = lb_progress_queues[progress_id]
-        
-        try:
-            while True:
-                try:
-                    message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    
-                    if message is None:
-                        break
-                    
-                    yield f"data: {json.dumps(message, ensure_ascii=False)}\n\n"
-                    
-                except asyncio.TimeoutError:
-                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-                    
-        finally:
-            if progress_id in lb_progress_queues:
-                del lb_progress_queues[progress_id]
+    """
+    Polling endpoint for progress updates.
+    Returns the current state from memory.
+    """
+    from api.state import import_states
+    from fastapi.responses import JSONResponse
     
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Content-Type": "text/event-stream; charset=utf-8"
-        }
-    )
+    headers = {"Cache-Control": "no-store, max-age=0"}
+    
+    if progress_id not in import_states:
+        logger.warning(f"POLL MISS: {progress_id} not found in {list(import_states.keys())}")
+        return JSONResponse(content={
+            "status": "pending",
+            "messages": [],
+            "current": 0,
+            "total": 0,
+            "matches": 0
+        }, headers=headers)
+    
+    state = import_states[progress_id]
+    logger.info(f"POLL HIT: {progress_id} -> Status={state.get('status')} MsgCount={len(state.get('messages', []))}")
+    return JSONResponse(content=state, headers=headers)
 
 
 @router.post("/api/spotify/generate-m3u8")

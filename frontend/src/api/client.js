@@ -239,6 +239,14 @@ class ApiClient {
     }
 
     /**
+     * Poll Spotify progress (JSON)
+     */
+    getSpotifySyncProgress(progressId) {
+        // Add timestamp to prevent browser caching
+        return this.get(`/spotify/progress/${progressId}`, { t: Date.now() });
+    }
+
+    /**
      * Generate m3u8 playlist file from validated Spotify tracks
      */
     generateSpotifyM3U8(playlistName, tracks) {
@@ -400,16 +408,27 @@ class ApiClient {
         return this.get("/playlists/monitored");
     }
 
-    monitorPlaylist(uuid, name, frequency, quality, source = "tidal", extra_config = null, use_playlist_folder = false) {
-        return this.post("/playlists/monitor", { uuid, name, frequency, quality, source, extra_config, use_playlist_folder });
+    monitorPlaylist(uuid, name, frequency, quality, source = "tidal", extra_config = null, use_playlist_folder = false, initialSyncProgressId = null, skipDownload = false) {
+        return this.post("/playlists/monitor", {
+            uuid,
+            name,
+            frequency,
+            quality,
+            source,
+            extra_config,
+            use_playlist_folder,
+            initial_sync_progress_id: initialSyncProgressId,
+            skip_download: skipDownload
+        });
     }
 
     removeMonitoredPlaylist(uuid) {
         return this.delete(`/playlists/${uuid}`);
     }
 
-    syncPlaylist(uuid) {
-        return this.post(`/playlists/${uuid}/sync`);
+    syncPlaylist(uuid, progressId = null) {
+        const url = `/playlists/${uuid}/sync${progressId ? `?progress_id=${progressId}` : ''}`;
+        return this.post(url);
     }
 
     getPlaylistFiles(uuid) {

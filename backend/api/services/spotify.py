@@ -26,9 +26,28 @@ async def fetch_and_validate_spotify_playlist(
     """
     client = SpotifyClient()
     
+    import time
+    from api.state import import_states
+
+    # Initialize state if ID provided
+    progress_id = None
+    # We need progress_id to update state. 
+    # But this function signature doesn't accept progress_id except via callback closure?
+    # Refactor: pass update_state callback instead of progress_callback?
+    # Or keep callback but inside the callback update state.
+    
     async def report(data: Dict):
+        # Add timestamp
+        data['timestamp'] = time.time()
+        
+        # Call legacy callback (queue) if present
         if progress_callback:
             await progress_callback(data)
+            
+    # NOTE: The caller (playlist_manager) defines the callback.
+    # We should update playlist_manager to update the state within the callback.
+    # This keeps service clean.
+
 
     try:
         await report({
@@ -58,6 +77,7 @@ async def fetch_and_validate_spotify_playlist(
         })
         
         validated_tracks = []
+        matches_found = 0
         
         for i, s_track in enumerate(spotify_tracks, 1):
             # Clean up text
@@ -80,20 +100,27 @@ async def fetch_and_validate_spotify_playlist(
 
             track_obj = TrackContainer()
             
+            # Perform search
             if validate:
+                await search_track_with_fallback(artist, title, track_obj)
+                
+                # Check match and increment counter
+                if track_obj.tidal_exists:
+                    matches_found += 1
+                
                 display_text = f"{artist} - {title}"
                 await report({
                     "type": "validating",
                     "message": f"Validating: {display_text}",
                     "progress": i,
                     "total": total_tracks,
+                    "matches_found": matches_found,
                     "current_track": {
                         "artist": artist,
-                        "title": title
+                        "title": title,
+                        "matched": track_obj.tidal_exists
                     }
                 })
-                # Perform search
-                await search_track_with_fallback(artist, title, track_obj)
                 # Small delay
                 await asyncio.sleep(0.05)
             
@@ -113,7 +140,7 @@ async def fetch_and_validate_spotify_playlist(
         found_count = sum(1 for t in validated_tracks if t["tidal_exists"])
         
         await report({
-            "type": "complete",
+            "type": "analysis_complete",
             "message": f"Process complete: {found_count}/{total_tracks} matched" if validate else f"Fetched {total_tracks} from Spotify",
             "progress": total_tracks,
             "total": total_tracks,

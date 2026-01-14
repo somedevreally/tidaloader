@@ -19,6 +19,8 @@ class MonitorPlaylistRequest(BaseModel):
     source: Literal["tidal", "listenbrainz", "spotify"] = "tidal"
     extra_config: Optional[Dict[str, Any]] = None
     use_playlist_folder: bool = False
+    initial_sync_progress_id: Optional[str] = None
+    skip_download: bool = False
 
 class DeleteFilesRequest(BaseModel):
     files: List[str]
@@ -59,13 +61,50 @@ async def monitor_playlist(
             request.quality,
             request.source,
             request.extra_config,
-            request.use_playlist_folder
         )
+        
+        logger.info(f"MONITOR REQUEST: UUID={request.uuid}, Name={request.name}, Skip={request.skip_download}, ProgressID={request.initial_sync_progress_id}")
+
         
         # Start initial sync in background only if new
         if created:
             logger.info(f"New playlist monitored {request.uuid}, triggering initial sync.")
-            background_tasks.add_task(playlist_manager.sync_playlist, request.uuid)
+            
+            # Initialize progress queue if requested
+            # Initialize progress queue if requested
+            if request.initial_sync_progress_id:
+                import asyncio
+                from api.state import lb_progress_queues, import_states
+                
+                # Initialize Legacy Queue
+                lb_progress_queues[request.initial_sync_progress_id] = asyncio.Queue()
+                
+                # Initialize New Polling State
+                import_states[request.initial_sync_progress_id] = {
+                    "status": "active",
+                    "messages": [{"text": "Initializing analysis...", "type": "info", "timestamp": 0}], # will be overwritten or appended
+                    "current": 0,
+                    "total": 0,
+                    "matches": 0
+                }
+                
+                # Give frontend a moment to connect to SSE stream (legacy) and ensure Polling picks up readiness
+                async def delayed_start():
+                    await asyncio.sleep(0.5)
+                    await playlist_manager.sync_playlist(
+                        request.uuid, 
+                        progress_id=request.initial_sync_progress_id,
+                        skip_download=request.skip_download
+                    )
+                
+                background_tasks.add_task(delayed_start)
+            else:
+                background_tasks.add_task(
+                    playlist_manager.sync_playlist, 
+                    request.uuid, 
+                    progress_id=None,
+                    skip_download=request.skip_download
+                )
         else:
             logger.info(f"Playlist {request.uuid} updated, skipping auto-sync.")
         
@@ -83,6 +122,7 @@ async def stop_monitoring(uuid: str, user: str = Depends(require_auth)):
 async def sync_playlist_manual(
     uuid: str, 
     background_tasks: BackgroundTasks,
+    progress_id: Optional[str] = Query(None, description="Progress ID to use for cached analysis results"),
     user: str = Depends(require_auth)
 ):
     """Trigger a manual sync/download"""
@@ -92,7 +132,8 @@ async def sync_playlist_manual(
             raise HTTPException(status_code=404, detail="Playlist not monitored")
             
         # Run synchronously for manual trigger to provide feedback
-        result = await playlist_manager.sync_playlist(uuid)
+        # Pass progress_id to enable cache usage
+        result = await playlist_manager.sync_playlist(uuid, progress_id=progress_id)
         return result
     except HTTPException:
         raise
