@@ -37,18 +37,11 @@ class TidalAPIClient:
         self.download_status_cache = {}
     
     def _check_endpoint_connection(self, url: str, timeout: int = 5) -> bool:
-        """
-        Check if an endpoint is reachable before adding it to the list.
-        
-        Args:
-            url: The endpoint URL to check
-            timeout: Connection timeout in seconds
-            
-        Returns:
-            True if endpoint is reachable, False otherwise
-        """
+
+        # Check if an endpoint is reachable before adding it to the list.
+
         try:
-            # Try a simple HEAD request first (lighter than GET)
+            # Try a simple HEAD request first
             response = requests.head(url, timeout=timeout, allow_redirects=True)
             if response.status_code < 500:  # Accept anything except server errors
                 logger.debug(f"✓ Endpoint {url} is reachable (HEAD returned {response.status_code})")
