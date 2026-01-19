@@ -1,5 +1,13 @@
 export const releaseNotes = [
     {
+        version: "1.3.3",
+        date: "2026-01-19",
+        title: "Spotify Polling Fix",
+        changes: [
+            "Fixed Spotify playlist import progress polling by aligning backend service with polling router."
+        ]
+    },
+    {
         version: "1.3.2",
         date: "2026-01-19",
         title: "Spotify Monitoring & Enhancements",

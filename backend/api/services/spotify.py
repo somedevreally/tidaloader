@@ -165,25 +165,69 @@ async def fetch_and_validate_spotify_playlist(
 
 async def process_spotify_playlist(playlist_uuid: str, progress_id: str, should_validate: bool = False):
     """
-    Legacy wrapper for existing endpoint using lb_progress_queues
+    Process spotify playlist and update in-memory state for polling.
     """
-    queue = asyncio.Queue()
-    lb_progress_queues[progress_id] = queue
+    from api.state import import_states
+    import time
+    
+    # Initialize state
+    import_states[progress_id] = {
+        "status": "active",
+        "messages": [],
+        "current": 0,
+        "total": 0,
+        "matches": 0,
+        "tracks": []
+    }
     
     async def progress_adapter(data):
-        await queue.put(data)
+        if progress_id not in import_states:
+            return
+
+        state = import_states[progress_id]
         
+        # Append message if present
+        if data.get("message"):
+            state["messages"].append({
+                "text": data["message"],
+                "type": data.get("type", "info"),
+                "timestamp": data.get("timestamp", time.time())
+            })
+            
+        # Update progress stats
+        if "progress" in data:
+            state["current"] = data["progress"]
+        if "total" in data:
+            state["total"] = data["total"]
+        if "matches_found" in data:
+            state["matches"] = data["matches_found"]
+            
+        # Handle completion states
+        msg_type = data.get("type")
+        
+        if msg_type == "analysis_complete":
+            state["status"] = "waiting_confirmation"
+            if "tracks" in data:
+                state["tracks"] = data["tracks"]
+                
+        elif msg_type == "error":
+            state["status"] = "error"
+            
     try:
         await fetch_and_validate_spotify_playlist(
             playlist_uuid,
             progress_callback=progress_adapter,
             validate=should_validate
         )
-    except Exception:
-        # Error is already reported to queue in service
-        pass
-    finally:
-        await queue.put(None) # Signal end
+    except Exception as e:
+        # Ensure error state is set even if fetch_and_validate raises before reporting
+        if progress_id in import_states:
+            import_states[progress_id]["status"] = "error"
+            import_states[progress_id]["messages"].append({
+                "text": str(e),
+                "type": "error",
+                "timestamp": time.time()
+            })
 
 
 
