@@ -23,3 +23,4 @@ httpx==0.25.2
 pytest-asyncio==0.23.2
 apscheduler==3.10.4
 Pillow
+beautifulsoup4

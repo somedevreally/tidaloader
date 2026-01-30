@@ -61,6 +61,7 @@ async def monitor_playlist(
             request.quality,
             request.source,
             request.extra_config,
+            use_playlist_folder=request.use_playlist_folder
         )
         
         logger.info(f"MONITOR REQUEST: UUID={request.uuid}, Name={request.name}, Skip={request.skip_download}, ProgressID={request.initial_sync_progress_id}")

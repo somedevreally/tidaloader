@@ -25,6 +25,18 @@ async def search_spotify_playlists(
     """Search for Spotify playlists"""
     client = SpotifyClient()
     try:
+        # Check if query is a direct URL/URI
+        if "spotify.com" in query or "spotify:playlist:" in query:
+            # It's likely a URL/URI
+            playlist_id = extract_spotify_id(query)
+            if playlist_id and len(playlist_id) > 5: # Basic sanity check
+                specific_playlist = await client.get_playlist_metadata(playlist_id)
+                if specific_playlist:
+                    return {"items": [specific_playlist]}
+                # If specific fetch fails or returns None, fallback to empty or search? 
+                # Let's return empty to avoid searching for the URL string which gives garbage.
+                return {"items": []}
+
         playlists = await client.search_playlists(query)
         return {"items": playlists}
     except Exception as e:

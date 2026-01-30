@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from itertools import chain
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import requests
+from bs4 import BeautifulSoup
 
 from spotapi import Public
 
@@ -213,58 +215,89 @@ class SpotifyClient:
             self._search_playlists_sync,
             query
         )
+    
+    def _fetch_metadata_from_html(self, playlist_id: str) -> Optional[SpotifyPlaylist]:
+        """
+        Fallback: scrape the public HTML page for Open Graph tags.
+        This provides title, image, and description/owner reliably for public playlists.
+        """
+        try:
+            url = f"https://open.spotify.com/playlist/{playlist_id}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                logger.warning(f"HTML fetch failed: {resp.status_code}")
+                return None
+                
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # Title
+            title_meta = soup.find("meta", property="og:title")
+            title = title_meta["content"] if title_meta else "Unknown Playlist"
+            
+            # Image
+            img_meta = soup.find("meta", property="og:image")
+            image = img_meta["content"] if img_meta else None
+            
+            # Owner/Description
+            # Spotify description often contains "Playlist · Owner" or similar
+            desc_meta = soup.find("meta", property="og:description")
+            description = desc_meta["content"] if desc_meta else ""
+            
+            # Extract owner from description if possible, or just use description
+            owner = "Spotify User"
+            if "·" in description:
+                try:
+                    parts = description.split("·")
+                    if len(parts) > 1:
+                        owner = parts[1].strip()
+                except:
+                    pass
+            elif "by" in description:
+                 # "Listen on Spotify: a playlist by User"
+                 try:
+                     owner = description.split("by")[-1].strip()
+                 except:
+                     pass
+
+            # Track Count (Fetch via API as HTML is hard to parse for count)
+            count = self._fetch_playlist_count(playlist_id)
+            
+            if count == 0 and "likes" in description: 
+                 # Sometimes empty count from API if private? But page is public.
+                 # Let's hope API works.
+                 pass
+
+            logger.info(f"Scraped metadata for {playlist_id}: {title} by {owner}")
+            
+            return SpotifyPlaylist(
+                id=playlist_id,
+                name=title,
+                owner=owner,
+                image=image,
+                track_count=count
+            )
+            
+        except Exception as e:
+            logger.error(f"HTML scraping failed: {e}")
+            return None
 
     def _get_playlist_metadata_sync(self, playlist_id: str) -> Optional[SpotifyPlaylist]:
         """
-        Fetch metadata for a specific playlist by mocking a search for its ID.
-        This allows retrieving the cover image.
+        Fetch metadata for a specific playlist.
+        Now uses HTML scraping first as it's more reliable for exact ID lookups
+        than the fuzzy search API.
         """
-        try:
-            # Import internals
-            from spotapi.public import client_pool
-            from spotapi.song import Song
+        # Try HTML scraping first
+        playlist = self._fetch_metadata_from_html(playlist_id)
+        if playlist:
+            return playlist
             
-            client = client_pool.get()
-            try:
-                song_api = Song(client=client)
-                query = f"spotify:playlist:{playlist_id}"
-                response = song_api.query_songs(query, limit=1)
-                
-                if "data" in response and "searchV2" in response["data"]:
-                    data = response["data"]["searchV2"]
-                    if "playlists" in data and "items" in data["playlists"]:
-                        items = data["playlists"]["items"]
-                        if items:
-                            p_data = items[0].get("data", {})
-                            uri = p_data.get("uri", "")
-                            p_id = uri.split(":")[-1] if uri else ""
-                            
-                            # Verify ID matches (search usually exact for URI)
-                            if p_id != playlist_id:
-                                logger.warning(f"Search for {playlist_id} returned different ID {p_id}")
-                                
-                            # Image
-                            images = p_data.get("images", {}).get("items", [])
-                            image_url = None
-                            if images:
-                                sources = images[0].get("sources", [])
-                                if sources:
-                                    image_url = sources[0].get("url")
-                                    
-                            owner_data = p_data.get("ownerV2", {}).get("data", {})
-                            
-                            return SpotifyPlaylist(
-                                id=p_id,
-                                name=p_data.get("name", "Unknown"),
-                                owner=owner_data.get("name", "Unknown"),
-                                image=image_url
-                            )
-            finally:
-                client_pool.put(client)
-            return None
-        except Exception as e:
-            logger.error(f"Error fetching spotify metadata: {e}")
-            return None
+        # Fallback to fuzzy search (original logic) if scraping fails?
+        # Or just return None because fuzzy search gives wrong results?
+        # Let's return None to be safe.
+        return None
 
     async def get_playlist_metadata(self, playlist_id: str) -> Optional[SpotifyPlaylist]:
         loop = asyncio.get_event_loop()
