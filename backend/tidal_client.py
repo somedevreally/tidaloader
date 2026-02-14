@@ -207,14 +207,21 @@ class TidalAPIClient:
         return self._endpoints_cache
     
     def _sort_endpoints_by_priority(self, operation: Optional[str] = None) -> List[Dict]:
-        endpoints = self.endpoints.copy()
+        endpoints = [ep.copy() for ep in self.endpoints]
         
+        sticky_name = None
         if operation and operation in self.success_history:
-            last_success = self.success_history[operation]
+            sticky_name = self.success_history[operation]['name']
+        elif self.success_history:
+            # Fallback: use the most recently successful endpoint from any operation
+            most_recent = max(self.success_history.values(), key=lambda x: x['timestamp'])
+            sticky_name = most_recent['name']
+        
+        if sticky_name:
             for ep in endpoints:
-                if ep['name'] == last_success['name']:
-                    ep = ep.copy()
+                if ep['name'] == sticky_name:
                     ep['priority'] = 0
+                    break
         
         return sorted(endpoints, key=lambda x: (x.get('priority', 999), x['name']))
     
@@ -280,7 +287,7 @@ class TidalAPIClient:
                                         is_empty = True
 
                             
-                            if is_empty:
+                            if is_empty and operation != "get_track_metadata":
                                 logger.warning(f"[{idx}/{len(sorted_endpoints)}] {endpoint['name']} returned 200 OK but empty content for {operation}. Trying next...")
                                 continue
                                 

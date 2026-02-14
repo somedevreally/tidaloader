@@ -1,50 +1,31 @@
 from pathlib import Path
-import json
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-from api.settings import settings, DOWNLOAD_DIR
+
+from api.settings import DOWNLOAD_DIR
 from scheduler import PlaylistScheduler
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from api.clients.jellyfin_client import jellyfin_client
+import database as db
 
 router = APIRouter()
 
-CONFIG_FILE = DOWNLOAD_DIR / "config.json"
 
-class SystemSettings(BaseModel):
-    sync_time: str
-    organization_template: str = "{Artist}/{Album}/{TrackNumber} - {Title}"
-    active_downloads: int = 3
-    use_musicbrainz: bool = True
-    run_beets: bool = False
-    embed_lyrics: bool = False
-    
+class SettingsUpdate(BaseModel):
+    """Settings payload from the frontend. All fields optional for partial updates."""
+    quality: Optional[str] = None
+    sync_time: Optional[str] = None
+    organization_template: Optional[str] = None
+    active_downloads: Optional[int] = None
+    use_musicbrainz: Optional[bool] = None
+    run_beets: Optional[bool] = None
+    embed_lyrics: Optional[bool] = None
+    group_compilations: Optional[bool] = None
     jellyfin_url: Optional[str] = None
     jellyfin_api_key: Optional[str] = None
+    version: int  # required for optimistic concurrency
 
-def load_persistent_settings():
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                data = json.load(f)
-                if 'sync_time' in data:
-                    settings.sync_time = data['sync_time']
-                elif 'sync_hour' in data:
-                    settings.sync_time = f"{data['sync_hour']:02d}:00"
-                
-                settings.organization_template = data.get('organization_template', settings.organization_template)
-                settings.active_downloads = data.get('active_downloads', settings.active_downloads)
-                settings.use_musicbrainz = data.get('use_musicbrainz', settings.use_musicbrainz)
-                settings.run_beets = data.get('run_beets', settings.run_beets)
-                settings.embed_lyrics = data.get('embed_lyrics', settings.embed_lyrics)
-                settings.jellyfin_url = data.get('jellyfin_url', settings.jellyfin_url)
-                settings.jellyfin_api_key = data.get('jellyfin_api_key', settings.jellyfin_api_key)
-        except Exception:
-            pass
-
-# Load on module import (or startup)
-load_persistent_settings()
 
 @router.get("/api")
 async def api_root():
@@ -54,64 +35,58 @@ async def api_root():
 async def health_check():
     return {"status": "healthy"}
 
+
 @router.get("/api/system/settings")
 async def get_settings():
-    return {
-        "sync_time": settings.sync_time,
-        "organization_template": settings.organization_template,
-        "active_downloads": settings.active_downloads,
-        "use_musicbrainz": settings.use_musicbrainz,
-        "run_beets": settings.run_beets,
-        "embed_lyrics": settings.embed_lyrics,
-        "jellyfin_url": settings.jellyfin_url,
-        "jellyfin_api_key": settings.jellyfin_api_key
-    }
+    """Return all settings + version for concurrency control."""
+    settings = db.get_all_settings()
+    return settings
+
 
 @router.post("/api/system/settings")
-async def update_settings(new_settings: SystemSettings):
-    settings.sync_time = new_settings.sync_time
-    settings.organization_template = new_settings.organization_template
-    settings.active_downloads = new_settings.active_downloads
-    settings.use_musicbrainz = new_settings.use_musicbrainz
-    settings.run_beets = new_settings.run_beets
-    settings.embed_lyrics = new_settings.embed_lyrics
-    settings.jellyfin_url = new_settings.jellyfin_url
-    settings.jellyfin_api_key = new_settings.jellyfin_api_key
-    
-    # Persist
+async def update_settings(payload: SettingsUpdate):
+    """Update settings with optimistic concurrency.
+
+    Returns 409 Conflict if the version doesn't match (another user changed settings).
+    """
+    # Build updates dict from non-None fields (excluding version)
+    updates: Dict[str, Any] = {}
+    for field_name in payload.model_fields:
+        if field_name == "version":
+            continue
+        value = getattr(payload, field_name)
+        if value is not None:
+            updates[field_name] = value
+
+    if not updates:
+        return {"status": "unchanged", "version": payload.version}
+
     try:
-        data = {}
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE, 'r') as f:
-                data = json.load(f)
-        
-        data['sync_time'] = new_settings.sync_time
-        data['organization_template'] = new_settings.organization_template
-        data['active_downloads'] = new_settings.active_downloads
-        data['use_musicbrainz'] = new_settings.use_musicbrainz
-        data['run_beets'] = new_settings.run_beets
-        data['embed_lyrics'] = new_settings.embed_lyrics
-        data['jellyfin_url'] = new_settings.jellyfin_url
-        data['jellyfin_api_key'] = new_settings.jellyfin_api_key
-        
-        # Cleanup old key if exists
-        if 'sync_hour' in data:
-             del data['sync_hour']
-        
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-            
-        # Update scheduler
-        scheduler = PlaylistScheduler()
-        scheduler.reschedule_job(new_settings.sync_time)
-        
-        # Verify Jellyfin automatically if creds provided?
-        # No, let explicit test handle it.
-        
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-        
-    return {"status": "updated", "settings": new_settings.dict()}
+        new_version = db.update_settings(updates, payload.version)
+    except db.StaleSettingsError as e:
+        # Return 409 with current settings so frontend can reconcile
+        current = db.get_all_settings()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Settings were changed by another user",
+                "current_settings": current,
+            },
+        )
+
+    # Reschedule sync job if sync_time changed
+    if "sync_time" in updates:
+        try:
+            scheduler = PlaylistScheduler()
+            scheduler.reschedule_job(updates["sync_time"])
+        except Exception:
+            pass  # Non-critical
+
+    # Return updated settings
+    result = db.get_all_settings()
+    result["status"] = "updated"
+    return result
+
 
 class TestConnectionRequest(BaseModel):
     url: Optional[str] = None
@@ -123,7 +98,7 @@ async def test_jellyfin_connection(request: TestConnectionRequest = None):
         # Use provided values from request body, or default to stored settings if empty
         url = request.url if request and request.url else None
         api_key = request.api_key if request and request.api_key else None
-        
+
         info = jellyfin_client.get_system_info(url=url, api_key=api_key)
         return {"status": "success", "info": info}
     except Exception as e:
@@ -153,6 +128,6 @@ async def get_jellyfin_user_image(user_id: str):
 async def sync_jellyfin_covers(background_tasks: BackgroundTasks):
     # Late import to avoid circular dependency if system imported by scheduler/playlist_manager
     from playlist_manager import playlist_manager
-    
+
     background_tasks.add_task(playlist_manager.force_sync_covers)
     return {"status": "started", "message": "Global cover sync started in background"}

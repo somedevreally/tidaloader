@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { api } from "../api/client";
 
 export const useDownloadStore = create(
   persist(
@@ -16,6 +17,7 @@ export const useDownloadStore = create(
       embedLyrics: false,
       jellyfinUrl: "",
       jellyfinApiKey: "",
+      settingsVersion: 1, // optimistic concurrency version
 
       // Server queue settings (synced from backend)
       serverQueueSettings: {
@@ -27,6 +29,16 @@ export const useDownloadStore = create(
 
       // Flag to indicate if we're using server queue
       useServerQueue: true,
+
+      // Pagination state for completed tracks
+      completedPagination: {
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 50,
+        hasMore: true,
+        loading: false,
+      },
 
       addToQueue: (tracks) =>
         set((state) => {
@@ -146,11 +158,60 @@ export const useDownloadStore = create(
 
       clearQueue: () => set({ queue: [] }),
 
+      // Load more completed tracks (for infinite scroll)
+      loadMoreCompleted: async () => {
+        const state = get();
+        if (state.completedPagination.loading || !state.completedPagination.hasMore) {
+          return;
+        }
+
+        set((state) => ({
+          completedPagination: { ...state.completedPagination, loading: true },
+        }));
+
+        try {
+          const result = await api.getCompletedTracks(
+            state.completedPagination.limit,
+            state.completedPagination.offset
+          );
+
+          set((state) => ({
+            completedPagination: {
+              items: [...state.completedPagination.items, ...result.items],
+              total: result.total,
+              offset: result.offset + result.items.length,
+              limit: result.limit,
+              hasMore: result.has_more,
+              loading: false,
+            },
+          }));
+        } catch (e) {
+          console.error("Failed to load completed tracks:", e);
+          set((state) => ({
+            completedPagination: { ...state.completedPagination, loading: false },
+          }));
+        }
+      },
+
+      // Clear completed UI (preserves database records)
+      clearCompletedUI: () =>
+        set({
+          completedPagination: {
+            items: [],
+            total: 0,
+            offset: 0,
+            limit: 50,
+            hasMore: true,
+            loading: false,
+          },
+        }),
+
       fetchServerSettings: async () => {
         try {
           const res = await fetch('/api/system/settings').then(r => r.json());
 
           set((state) => ({
+            quality: res.quality !== undefined ? res.quality : state.quality,
             organizationTemplate: res.organization_template !== undefined ? res.organization_template : state.organizationTemplate,
             maxConcurrent: res.active_downloads !== undefined ? res.active_downloads : state.maxConcurrent,
             useMusicBrainz: res.use_musicbrainz !== undefined ? res.use_musicbrainz : state.useMusicBrainz,
@@ -158,6 +219,7 @@ export const useDownloadStore = create(
             embedLyrics: res.embed_lyrics !== undefined ? res.embed_lyrics : state.embedLyrics,
             jellyfinUrl: res.jellyfin_url !== undefined ? res.jellyfin_url : state.jellyfinUrl,
             jellyfinApiKey: res.jellyfin_api_key !== undefined ? res.jellyfin_api_key : state.jellyfinApiKey,
+            settingsVersion: res.version !== undefined ? res.version : state.settingsVersion,
 
             serverQueueSettings: {
               ...state.serverQueueSettings,
@@ -171,30 +233,66 @@ export const useDownloadStore = create(
       },
 
       updateServerSettings: async (settings) => {
+        const currentVersion = get().settingsVersion;
         try {
-          const body = { ...settings };
-          await fetch('/api/system/settings', {
+          const body = { ...settings, version: currentVersion };
+          const res = await fetch('/api/system/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
           });
 
-          // Optimistic update
+          if (res.status === 409) {
+            // Version conflict — another user changed settings
+            const errorData = await res.json();
+            const current = errorData.detail?.current_settings;
+            if (current) {
+              // Update local state with server's current values
+              set((state) => ({
+                quality: current.quality !== undefined ? current.quality : state.quality,
+                organizationTemplate: current.organization_template !== undefined ? current.organization_template : state.organizationTemplate,
+                maxConcurrent: current.active_downloads !== undefined ? current.active_downloads : state.maxConcurrent,
+                useMusicBrainz: current.use_musicbrainz !== undefined ? current.use_musicbrainz : state.useMusicBrainz,
+                runBeets: current.run_beets !== undefined ? current.run_beets : state.runBeets,
+                embedLyrics: current.embed_lyrics !== undefined ? current.embed_lyrics : state.embedLyrics,
+                jellyfinUrl: current.jellyfin_url !== undefined ? current.jellyfin_url : state.jellyfinUrl,
+                jellyfinApiKey: current.jellyfin_api_key !== undefined ? current.jellyfin_api_key : state.jellyfinApiKey,
+                settingsVersion: current.version !== undefined ? current.version : state.settingsVersion,
+                serverQueueSettings: {
+                  ...state.serverQueueSettings,
+                  sync_time: current.sync_time !== undefined ? current.sync_time : state.serverQueueSettings.sync_time
+                }
+              }));
+            }
+            return { conflict: true, current_settings: current };
+          }
+
+          if (!res.ok) {
+            throw new Error(`Server returned ${res.status}`);
+          }
+
+          const data = await res.json();
+
+          // Update local state with confirmed values
           set((state) => ({
-            organizationTemplate: settings.organization_template !== undefined ? settings.organization_template : state.organizationTemplate,
-            maxConcurrent: settings.active_downloads !== undefined ? settings.active_downloads : state.maxConcurrent,
-            useMusicBrainz: settings.use_musicbrainz !== undefined ? settings.use_musicbrainz : state.useMusicBrainz,
-            runBeets: settings.run_beets !== undefined ? settings.run_beets : state.runBeets,
-            embedLyrics: settings.embed_lyrics !== undefined ? settings.embed_lyrics : state.embedLyrics,
-            jellyfinUrl: settings.jellyfin_url !== undefined ? settings.jellyfin_url : state.jellyfinUrl,
-            jellyfinApiKey: settings.jellyfin_api_key !== undefined ? settings.jellyfin_api_key : state.jellyfinApiKey,
+            quality: data.quality !== undefined ? data.quality : state.quality,
+            organizationTemplate: data.organization_template !== undefined ? data.organization_template : state.organizationTemplate,
+            maxConcurrent: data.active_downloads !== undefined ? data.active_downloads : state.maxConcurrent,
+            useMusicBrainz: data.use_musicbrainz !== undefined ? data.use_musicbrainz : state.useMusicBrainz,
+            runBeets: data.run_beets !== undefined ? data.run_beets : state.runBeets,
+            embedLyrics: data.embed_lyrics !== undefined ? data.embed_lyrics : state.embedLyrics,
+            jellyfinUrl: data.jellyfin_url !== undefined ? data.jellyfin_url : state.jellyfinUrl,
+            jellyfinApiKey: data.jellyfin_api_key !== undefined ? data.jellyfin_api_key : state.jellyfinApiKey,
+            settingsVersion: data.version !== undefined ? data.version : state.settingsVersion,
             serverQueueSettings: {
               ...state.serverQueueSettings,
-              sync_time: settings.sync_time !== undefined ? settings.sync_time : state.serverQueueSettings.sync_time
+              sync_time: data.sync_time !== undefined ? data.sync_time : state.serverQueueSettings.sync_time
             }
           }));
+          return { conflict: false };
         } catch (e) {
           console.error("Failed to update system settings", e);
+          throw e;
         }
       },
 
@@ -214,56 +312,25 @@ export const useDownloadStore = create(
 
       setQuality: (quality) => set({ quality }),
 
-      setOrganizationTemplate: (template) => {
-        set({ organizationTemplate: template });
-        get().saveSettingsToServer();
-      },
-      setUseMusicBrainz: (enabled) => {
-        set({ useMusicBrainz: enabled });
-        get().saveSettingsToServer();
-      },
-      setRunBeets: (enabled) => {
-        set({ runBeets: enabled });
-        get().saveSettingsToServer();
-      },
-      setEmbedLyrics: (enabled) => {
-        set({ embedLyrics: enabled });
-        get().saveSettingsToServer();
-      },
+      setOrganizationTemplate: (template) => set({ organizationTemplate: template }),
+      setUseMusicBrainz: (enabled) => set({ useMusicBrainz: enabled }),
+      setRunBeets: (enabled) => set({ runBeets: enabled }),
+      setEmbedLyrics: (enabled) => set({ embedLyrics: enabled }),
       setMaxConcurrent: (val) => {
         set({ maxConcurrent: val });
-        get().saveSettingsToServer();
-      },
-
-      saveSettingsToServer: async () => {
-        const s = get();
-        try {
-          await fetch('/api/system/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sync_time: s.serverQueueSettings.sync_time,
-              organization_template: s.organizationTemplate,
-              active_downloads: s.maxConcurrent,
-              use_musicbrainz: s.useMusicBrainz,
-              run_beets: s.runBeets,
-              embed_lyrics: s.embedLyrics,
-              jellyfin_url: s.jellyfinUrl,
-              jellyfin_api_key: s.jellyfinApiKey
-            })
-          });
-        } catch (e) {
-          console.error("Failed to save settings", e);
-        }
       },
 
       // Server queue state sync methods
-      setServerQueueState: ({ queue, downloading, completed, failed }) =>
+      setServerQueueState: ({ queue, downloading, completed, failed, completedTotal }) =>
         set((state) => ({
           queue: queue !== undefined ? queue : state.queue,
           downloading: downloading !== undefined ? downloading : state.downloading,
           completed: completed !== undefined ? completed : state.completed,
           failed: failed !== undefined ? failed : state.failed,
+          completedPagination: {
+            ...state.completedPagination,
+            total: completedTotal !== undefined ? completedTotal : state.completedPagination.total,
+          },
         })),
 
       setQueueSettings: (settings) =>
@@ -402,12 +469,6 @@ export const useDownloadStore = create(
         downloading: state.downloading,
         completed: state.completed,
         failed: state.failed,
-        quality: state.quality,
-        maxConcurrent: state.maxConcurrent,
-        organizationTemplate: state.organizationTemplate,
-        groupCompilations: state.groupCompilations,
-        runBeets: state.runBeets,
-        embedLyrics: state.embedLyrics,
       }),
     }
   )

@@ -73,8 +73,8 @@ async def fetch_and_store_lyrics(filepath: Path, metadata: dict, audio_file=None
                             log_warning(f"Failed to embed MP3 SYLT: {e}")
                     elif audio_file:
                         try:
-                            audio_file['SYNCEDLYRICS'] = lyrics_result.synced_lyrics
-                            log_success("Embedded synced lyrics in SYNCEDLYRICS tag")
+                            audio_file['LYRICS'] = lyrics_result.synced_lyrics
+                            log_success("Embedded synced lyrics in LYRICS tag")
                         except Exception as e:
                             log_warning(f"Failed to embed synced lyrics tag: {e}")
                             

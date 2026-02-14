@@ -461,22 +461,29 @@ function ManualGenerator() {
   };
 
   const validateTrack = async (idx) => {
-    const track = tracks[idx];
-    if (!track) return;
-
     setTrackStatuses(prev => ({ ...prev, [idx]: 'validating' }));
 
     try {
-      const result = await api.validateListenBrainzTrack(track);
+      // Get track from current state using functional update
+      let trackToValidate;
+      setTracks(prev => {
+        trackToValidate = prev[idx];
+        return prev;  // No change yet
+      });
 
-      // Update track with result
-      const newTracks = [...tracks];
-      newTracks[idx] = result;
-      setTracks(newTracks);
+      if (!trackToValidate) return;
+
+      const result = await api.validateListenBrainzTrack(trackToValidate);
+
+      // Update using functional state update to prevent race condition
+      setTracks(prev => {
+        const newTracks = [...prev];
+        newTracks[idx] = result;
+        return newTracks;
+      });
 
       if (result.tidal_exists) {
         setTrackStatuses(prev => ({ ...prev, [idx]: 'success' }));
-        // Auto-select if found? Maybe not, require explicit "Download" click or select
         setSelected(prev => new Set(prev).add(result.tidal_id));
       } else {
         setTrackStatuses(prev => ({ ...prev, [idx]: 'error' }));
@@ -486,7 +493,14 @@ function ManualGenerator() {
     } catch (e) {
       console.error("Validation failed", e);
       setTrackStatuses(prev => ({ ...prev, [idx]: 'error' }));
-      return track; // Return original
+
+      // Return original track from current state
+      let originalTrack;
+      setTracks(prev => {
+        originalTrack = prev[idx];
+        return prev;
+      });
+      return originalTrack;
     }
   };
 

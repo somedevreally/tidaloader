@@ -1,7 +1,6 @@
-import { h } from "preact";
-import { useState, useEffect } from "preact/hooks";
+import { h, Fragment } from "preact";
+import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import { useDownloadStore } from "../stores/downloadStore";
-import { api } from "../api/client";
 
 const QUALITY_OPTIONS = [
     { value: "HI_RES_LOSSLESS", label: "Hi-Res FLAC", description: "Up to 24-bit/192kHz" },
@@ -13,6 +12,91 @@ const QUALITY_OPTIONS = [
     { value: "LOW", label: "AAC 96kbps", description: "Low quality AAC" },
 ];
 
+const PREDEFINED_TEMPLATES = [
+    "{Artist}/{Album}/{TrackNumber} - {Title}",
+    "{Artist}/{Album}/{Title}",
+    "{Artist} - {Title}",
+    "{Album}/{TrackNumber} - {Title}"
+];
+
+// ─── Toast Component ─────────────────────────────────────────────────────
+function Toast({ message, type, onDismiss }) {
+    useEffect(() => {
+        const timer = setTimeout(onDismiss, 3000);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const colors = {
+        success: "bg-green-500/15 text-green-400 border-green-500/30",
+        error: "bg-red-500/15 text-red-400 border-red-500/30",
+        warning: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+        info: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    };
+
+    const icons = {
+        success: (
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
+        ),
+        error: (
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        ),
+        warning: (
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+        ),
+        info: (
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        ),
+    };
+
+    return (
+        <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border text-sm font-medium animate-fade-in ${colors[type] || colors.info}`}>
+            {icons[type] || icons.info}
+            <span>{message}</span>
+        </div>
+    );
+}
+
+// ─── Toggle Switch with auto-save ────────────────────────────────────────
+function AutoSaveToggle({ label, description, checked, disabled, onToggle, savingKey, savingState }) {
+    const isSaving = savingState === savingKey;
+
+    return (
+        <div className={`flex items-center justify-between p-4 bg-surface-alt rounded-lg border border-border-light transition-colors ${disabled ? 'opacity-50' : ''}`}>
+            <div className="space-y-1 pr-4">
+                <span className="text-sm font-medium text-text block">{label}</span>
+                <span className="text-xs text-text-muted block">{description}</span>
+            </div>
+            <div className="flex items-center gap-2">
+                {isSaving && (
+                    <svg className="animate-spin h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                )}
+                <label className={`relative inline-flex items-center ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                    <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={checked}
+                        onChange={(e) => onToggle(e.target.checked)}
+                        disabled={disabled}
+                    />
+                    <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                </label>
+            </div>
+        </div>
+    );
+}
+
+// ─── Main SettingsPanel ──────────────────────────────────────────────────
 export function SettingsPanel() {
     const [syncTime, setSyncTime] = useState("04:00");
     const [template, setTemplate] = useState("{Artist}/{Album}/{TrackNumber} - {Title}");
@@ -21,7 +105,6 @@ export function SettingsPanel() {
     const [runBeets, setRunBeets] = useState(false);
     const [embedLyrics, setEmbedLyrics] = useState(false);
     const [quality, setQuality] = useState("LOSSLESS");
-
     const [jellyfinUrl, setJellyfinUrl] = useState("");
     const [jellyfinApiKey, setJellyfinApiKey] = useState("");
     const [jellyfinStatus, setJellyfinStatus] = useState(null);
@@ -29,47 +112,87 @@ export function SettingsPanel() {
 
     const [processing, setProcessing] = useState(false);
     const [syncingCovers, setSyncingCovers] = useState(false);
+    const [savingToggle, setSavingToggle] = useState(null); // which toggle is auto-saving
 
-    const PREDEFINED_TEMPLATES = [
-        "{Artist}/{Album}/{TrackNumber} - {Title}",
-        "{Artist}/{Album}/{Title}",
-        "{Artist} - {Title}",
-        "{Album}/{TrackNumber} - {Title}"
-    ];
+    // Toast state
+    const [toasts, setToasts] = useState([]);
+    const toastIdRef = useRef(0);
 
-    // Initial load
+    const addToast = useCallback((message, type = "success") => {
+        const id = ++toastIdRef.current;
+        setToasts((prev) => [...prev.slice(-2), { id, message, type }]); // keep max 3
+        return id;
+    }, []);
+
+    const removeToast = useCallback((id) => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, []);
+
+    // Load settings on mount
     useEffect(() => {
         const load = async () => {
             try {
                 const s = await useDownloadStore.getState().fetchServerSettings();
                 if (s) {
-                    setSyncTime(s.sync_time);
-                    setTemplate(s.organization_template);
-                    setActiveDownloads(s.active_downloads);
+                    setSyncTime(s.sync_time || "04:00");
+                    setTemplate(s.organization_template || "{Artist}/{Album}/{TrackNumber} - {Title}");
+                    setActiveDownloads(s.active_downloads || 3);
                     setUseMusicBrainz(s.use_musicbrainz !== undefined ? s.use_musicbrainz : true);
                     setRunBeets(s.run_beets || false);
                     setEmbedLyrics(s.embed_lyrics || false);
                     setJellyfinUrl(s.jellyfin_url || "");
                     setJellyfinApiKey(s.jellyfin_api_key || "");
+                    setQuality(s.quality || "LOSSLESS");
 
-                    // Check if template is custom
                     if (s.organization_template && !PREDEFINED_TEMPLATES.includes(s.organization_template)) {
                         setIsCustomMode(true);
                     }
                 }
-                setQuality(useDownloadStore.getState().quality);
             } catch (e) {
                 console.error("Load settings error", e);
+                addToast("Failed to load settings", "error");
             }
         };
         load();
     }, []);
 
+    // Auto-save handler for toggles
+    const handleToggleSave = async (key, value) => {
+        setSavingToggle(key);
+        try {
+            const result = await useDownloadStore.getState().updateServerSettings({
+                [key]: value,
+            });
+
+            if (result?.conflict) {
+                addToast("Settings changed by another user — reloaded", "warning");
+                // Reload all settings to get fresh values
+                const s = await useDownloadStore.getState().fetchServerSettings();
+                if (s) {
+                    setUseMusicBrainz(s.use_musicbrainz !== undefined ? s.use_musicbrainz : true);
+                    setRunBeets(s.run_beets || false);
+                    setEmbedLyrics(s.embed_lyrics || false);
+                }
+            } else {
+                addToast("Setting saved", "success");
+            }
+        } catch (e) {
+            addToast("Failed to save setting", "error");
+            // Revert the toggle
+            if (key === "use_musicbrainz") setUseMusicBrainz(!value);
+            if (key === "run_beets") setRunBeets(!value);
+            if (key === "embed_lyrics") setEmbedLyrics(!value);
+        } finally {
+            setSavingToggle(null);
+        }
+    };
+
+    // Save button handler for text/number fields
     const handleSave = async () => {
         setProcessing(true);
         try {
-            useDownloadStore.getState().setQuality(quality);
-            await useDownloadStore.getState().updateServerSettings({
+            const result = await useDownloadStore.getState().updateServerSettings({
+                quality,
                 sync_time: syncTime,
                 organization_template: template,
                 active_downloads: activeDownloads,
@@ -77,10 +200,29 @@ export function SettingsPanel() {
                 run_beets: runBeets,
                 embed_lyrics: embedLyrics,
                 jellyfin_url: jellyfinUrl,
-                jellyfin_api_key: jellyfinApiKey
+                jellyfin_api_key: jellyfinApiKey,
             });
+
+            if (result?.conflict) {
+                addToast("Settings changed by another user — your changes were not saved. Page reloaded with latest values.", "warning");
+                const s = await useDownloadStore.getState().fetchServerSettings();
+                if (s) {
+                    setSyncTime(s.sync_time || "04:00");
+                    setTemplate(s.organization_template || "{Artist}/{Album}/{TrackNumber} - {Title}");
+                    setActiveDownloads(s.active_downloads || 3);
+                    setUseMusicBrainz(s.use_musicbrainz !== undefined ? s.use_musicbrainz : true);
+                    setRunBeets(s.run_beets || false);
+                    setEmbedLyrics(s.embed_lyrics || false);
+                    setJellyfinUrl(s.jellyfin_url || "");
+                    setJellyfinApiKey(s.jellyfin_api_key || "");
+                    setQuality(s.quality || "LOSSLESS");
+                }
+            } else {
+                addToast("All settings saved successfully", "success");
+            }
         } catch (error) {
             console.error("Failed to save settings:", error);
+            addToast("Failed to save settings — please retry", "error");
         } finally {
             setProcessing(false);
         }
@@ -112,22 +254,31 @@ export function SettingsPanel() {
 
         setSyncingCovers(true);
         try {
+            const { api } = await import("../api/client");
             await api.syncJellyfinCovers();
-            // We use a simple alert or toast if available, but here a simple alert is fine or just relying on console.
-            // Ideally we should use addToast from a context, but SettingsPanel doesn't receive it in props currently?
-            // Wait, MainLayout usually provides it. SettingsPanel is likely routed.
-            // I'll just use alert for now or updated button state.
-            alert("Cover sync started in background!");
+            addToast("Cover sync started in background", "info");
         } catch (e) {
             console.error(e);
-            alert("Failed to start cover sync: " + e.message);
+            addToast("Failed to start cover sync: " + e.message, "error");
         } finally {
             setSyncingCovers(false);
         }
     };
 
     return (
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-8 pb-24">
+        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-8 pb-24 relative">
+            {/* Toast container */}
+            <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+                {toasts.map((toast) => (
+                    <Toast
+                        key={toast.id}
+                        message={toast.message}
+                        type={toast.type}
+                        onDismiss={() => removeToast(toast.id)}
+                    />
+                ))}
+            </div>
+
             <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-text">
                     Settings
@@ -216,46 +367,51 @@ export function SettingsPanel() {
                 </div>
             </div>
 
-            {/* Download Features */}
+            {/* Download Features — auto-save toggles */}
             <div className="card p-6 space-y-6">
                 <h2 className="text-xl font-semibold text-text flex items-center gap-2">
                     <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
                     Download Features
+                    <span className="text-xs text-text-muted font-normal ml-auto">Changes save automatically</span>
                 </h2>
 
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-surface-alt rounded-lg border border-border-light">
-                        <div className="space-y-1">
-                            <span className="text-sm font-medium text-text block">MusicBrainz Tagging</span>
-                            <span className="text-xs text-text-muted block">Fetch accurate metadata (genre, ISRC, MBIDs) from MusicBrainz</span>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" className="sr-only peer" checked={useMusicBrainz} onChange={(e) => setUseMusicBrainz(e.target.checked)} />
-                            <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
+                    <AutoSaveToggle
+                        label="MusicBrainz Tagging"
+                        description="Fetch accurate metadata (genre, ISRC, MBIDs) from MusicBrainz"
+                        checked={useMusicBrainz}
+                        onToggle={(val) => {
+                            setUseMusicBrainz(val);
+                            handleToggleSave("use_musicbrainz", val);
+                        }}
+                        savingKey="use_musicbrainz"
+                        savingState={savingToggle}
+                    />
 
-                    <div className={`flex items-center justify-between p-4 bg-surface-alt rounded-lg border border-border-light ${useMusicBrainz ? 'opacity-50' : ''}`}>
-                        <div className="space-y-1">
-                            <span className="text-sm font-medium text-text block">Beets Tagging</span>
-                            <span className="text-xs text-text-muted block">{useMusicBrainz ? "Disabled when MusicBrainz is enabled" : "Run beets importer after download (Experimental)"}</span>
-                        </div>
-                        <label className={`relative inline-flex items-center ${useMusicBrainz ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                            <input type="checkbox" className="sr-only peer" checked={runBeets && !useMusicBrainz} onChange={(e) => setRunBeets(e.target.checked)} disabled={useMusicBrainz} />
-                            <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
+                    <AutoSaveToggle
+                        label="Beets Tagging"
+                        description={useMusicBrainz ? "Disabled when MusicBrainz is enabled" : "Run beets importer after download (Experimental)"}
+                        checked={runBeets && !useMusicBrainz}
+                        disabled={useMusicBrainz}
+                        onToggle={(val) => {
+                            setRunBeets(val);
+                            handleToggleSave("run_beets", val);
+                        }}
+                        savingKey="run_beets"
+                        savingState={savingToggle}
+                    />
 
-                    <div className="flex items-center justify-between p-4 bg-surface-alt rounded-lg border border-border-light">
-                        <div className="space-y-1">
-                            <span className="text-sm font-medium text-text block">Embed Created Lyrics</span>
-                            <span className="text-xs text-text-muted block">Embed synced lyrics into file metadata</span>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" className="sr-only peer" checked={embedLyrics} onChange={(e) => setEmbedLyrics(e.target.checked)} />
-                            <div className="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
+                    <AutoSaveToggle
+                        label="Embed Created Lyrics"
+                        description="Embed synced lyrics into file metadata"
+                        checked={embedLyrics}
+                        onToggle={(val) => {
+                            setEmbedLyrics(val);
+                            handleToggleSave("embed_lyrics", val);
+                        }}
+                        savingKey="embed_lyrics"
+                        savingState={savingToggle}
+                    />
                 </div>
             </div>
 

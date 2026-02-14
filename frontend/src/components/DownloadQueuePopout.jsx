@@ -15,10 +15,11 @@ export function DownloadQueuePopout() {
   const downloading = useDownloadStore((state) => state.downloading);
   const completed = useDownloadStore((state) => state.completed);
   const failed = useDownloadStore((state) => state.failed);
+  const completedTotal = useDownloadStore((state) => state.completedPagination.total);
   const serverQueueSettings = useDownloadStore((state) => state.serverQueueSettings);
 
   const totalInQueue = queue.length + downloading.length;
-  const totalActivity = totalInQueue + completed.length + failed.length;
+  const totalActivity = totalInQueue + completedTotal + failed.length;
   const currentDownload = downloading[0];
   const currentProgress = currentDownload?.progress || 0;
 
@@ -288,7 +289,7 @@ export function DownloadQueuePopout() {
                   </div>
                   <div class="flex items-center gap-1 sm:gap-1.5">
                     <div class="w-2 h-2 rounded-full bg-primary-dark"></div>
-                    <span>Completed: {completed.length}</span>
+                    <span>Completed: {completedTotal}</span>
                   </div>
                   {failed.length > 0 && (
                     <div class="flex items-center gap-1 sm:gap-1.5">
@@ -501,7 +502,8 @@ export function DownloadQueuePopout() {
                   </div>
                 )}
 
-                {completed.length > 0 && (
+                {/* Completed Section with Pagination */}
+                {useDownloadStore.getState().completedPagination.total > 0 && (
                   <div>
                     <button
                       onClick={() => setShowCompleted(!showCompleted)}
@@ -523,18 +525,18 @@ export function DownloadQueuePopout() {
                             />
                           </svg>
                           <span class="text-sm font-semibold text-primary">
-                            Completed: {completed.length}
+                            Completed: {useDownloadStore.getState().completedPagination.total}
                           </span>
                         </div>
                         <div class="flex items-center gap-2">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              downloadManager.clearCompleted();
+                              useDownloadStore.getState().clearCompletedUI();
                             }}
                             class="text-xs text-text-muted hover:text-text font-medium px-2 py-1 hover:bg-primary/20 rounded transition-colors"
                           >
-                            Clear
+                            Clear View
                           </button>
                           <svg
                             class={`w-4 h-4 text-primary transition-transform duration-200 ${showCompleted ? "rotate-180" : ""
@@ -555,42 +557,13 @@ export function DownloadQueuePopout() {
                     </button>
 
                     {showCompleted && (
-                      <div class="mt-2 space-y-2 max-h-64 overflow-y-auto custom-scrollbar animate-slide-down">
-                        {completed.map((track) => (
-                          <div
-                            key={track.id}
-                            class="p-3 bg-primary/5 rounded-lg border border-primary/20"
-                          >
-                            <div class="flex items-center gap-2">
-                              <svg
-                                class="w-4 h-4 text-primary flex-shrink-0"
-                                fill="currentColor"
-                                viewBox="0 0 20 20"
-                              >
-                                <path
-                                  fill-rule="evenodd"
-                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                  clip-rule="evenodd"
-                                />
-                              </svg>
-                              <div class="flex-1 min-w-0">
-                                <p class="text-sm font-medium text-text truncate">
-                                  {track.title}
-                                </p>
-                                <p class="text-xs text-text-muted truncate">
-                                  {track.artist}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <CompletedTracksSection />
                     )}
                   </div>
                 )}
 
                 {totalInQueue === 0 &&
-                  completed.length === 0 &&
+                  completedTotal === 0 &&
                   failed.length === 0 && (
                     <div class="text-center py-12">
                       <svg
@@ -617,5 +590,95 @@ export function DownloadQueuePopout() {
         </>
       )}
     </>
+  );
+}
+// Completed Tracks Section with Infinite Scroll
+function CompletedTracksSection() {
+  const completedPagination = useDownloadStore((state) => state.completedPagination);
+  const loadMoreCompleted = useDownloadStore((state) => state.loadMoreCompleted);
+  const scrollRef = useRef(null);
+
+  // Load initial tracks when component mounts
+  useEffect(() => {
+    if (completedPagination.items.length === 0 && !completedPagination.loading) {
+      loadMoreCompleted();
+    }
+  }, []);
+
+  // Infinite scroll handler
+  const handleScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    const scrolledToBottom = scrollHeight - scrollTop <= clientHeight + 100; // 100px threshold
+
+    if (scrolledToBottom && !completedPagination.loading && completedPagination.hasMore) {
+      loadMoreCompleted();
+    }
+  };
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      class="mt-2 space-y-2 max-h-64 overflow-y-auto custom-scrollbar animate-slide-down"
+    >
+      {completedPagination.items.map((track) => (
+        <div
+          key={track.track_id || track.id}
+          class="p-3 bg-primary/5 rounded-lg border border-primary/20"
+        >
+          <div class="flex items-center gap-2">
+            <svg
+              class="w-4 h-4 text-primary flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-text truncate">
+                {track.title}
+              </p>
+              <p class="text-xs text-text-muted truncate">
+                {track.artist}
+              </p>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {completedPagination.loading && (
+        <div class="flex items-center justify-center p-4">
+          <svg
+            class="animate-spin h-5 w-5 text-primary"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              class="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="4"
+            ></circle>
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+        </div>
+      )}
+
+      {!completedPagination.hasMore && completedPagination.items.length > 0 && (
+        <div class="text-center p-2 text-xs text-text-muted">
+          All {completedPagination.total} tracks shown
+        </div>
+      )}
+    </div>
   );
 }

@@ -153,7 +153,7 @@ class DownloadManager {
       }));
 
       // Update store with server state
-      store.setServerQueueState({ queue, downloading, completed, failed });
+      store.setServerQueueState({ queue, downloading, completed, failed, completedTotal: serverState.completed_total });
 
       // Update settings from server
       if (serverState.settings) {

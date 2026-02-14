@@ -3,6 +3,7 @@ import { useState, useEffect } from "preact/hooks";
 import { Router } from "preact-router";
 import logo from "./assets/tsunami.svg";
 import { useAuthStore } from "./store/authStore";
+import { useDownloadStore } from "./stores/downloadStore";
 import { Login } from "./components/Login";
 import { SearchBar } from "./components/SearchBar";
 import { WeeklyJamsGenerator } from "./components/WeeklyJamsGenerator";
@@ -37,6 +38,13 @@ export function App() {
             console.warn("Failed to check release notes version", e);
         }
     }, []);
+
+    // Fetch server settings (quality, org template, etc.) from database on mount
+    useEffect(() => {
+        if (isAuthenticated) {
+            useDownloadStore.getState().fetchServerSettings();
+        }
+    }, [isAuthenticated]);
 
     const handleCloseReleaseNotes = () => {
         setShowReleaseNotes(false);

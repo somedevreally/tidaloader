@@ -1,5 +1,22 @@
 export const releaseNotes = [
     {
+        version: "1.4.0",
+        date: "2026-02-14",
+        title: "Settings System Overhaul & Multi-User Support",
+        changes: [
+            "Major Backend Upgrade: Migrated settings storage from config.json to SQLite for improved reliability and performance.",
+            "Multi-User Safety: Implemented optimistic concurrency control with version tracking to prevent conflicts when multiple users modify settings simultaneously.",
+            "Enhanced User Experience: Auto-save functionality for toggle switches (MusicBrainz, Beets, Lyrics) with inline saving indicators.",
+            "Visual Feedback: Added toast notifications for save success, errors, and conflict resolution.",
+            "Centralized Quality Setting: Download quality preference now syncs across all browsers and users instead of being stored per-browser.",
+            "Conflict Resolution: When settings are changed by another user, you'll receive a clear warning with the option to reload the latest values.",
+            "Improved Settings Architecture: Backend proxy pattern ensures backward compatibility while enabling modern database-backed configuration.",
+            "Database Migration: Automatic one-time migration from config.json to SQLite on first startup with backup creation.",
+            "Queue Pagination: Completed tracks now display accurate total counts and support infinite scroll to view all download history (previously limited to 50 items).",
+            "Clear View Button: 'Clear View' button now only clears the UI display while preserving all download history in the database.",
+        ]
+    },
+    {
         version: "1.3.3",
         date: "2026-01-19",
         title: "Spotify Polling Fix",

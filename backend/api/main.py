@@ -22,16 +22,20 @@ from api.routers import system, listenbrainz, search, downloads, playlists, spot
 # from api.routers import library  # Temporarily disabled
 from api.clients import tidal_client
 from api.utils.logging import log_warning, log_info
-from download_state import download_state_manager
 from scheduler import PlaylistScheduler
 from queue_manager import queue_manager, QUEUE_AUTO_PROCESS
 from contextlib import asynccontextmanager
+import database as db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Initialize database (creates tables if needed)
+    db.init_db()
+    
+    # One-time JSON → SQLite migration
+    db.migrate_json_to_sqlite()
+    
     tidal_client.cleanup_old_status_cache()
-    download_state_manager._cleanup_old_entries()
     
     # Initialize queue manager and start processing if auto mode is enabled
     log_info(f"Queue manager initialized: auto_process={QUEUE_AUTO_PROCESS}")

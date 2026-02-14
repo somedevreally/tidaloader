@@ -3,8 +3,6 @@ import asyncio
 import aiohttp
 import traceback
 
-from api.state import active_downloads
-from download_state import download_state_manager
 from api.utils.logging import log_error, log_info, log_step, log_success, log_warning
 from api.services.audio import transcode_to_mp3, transcode_to_opus, write_metadata_tags
 from api.services.files import organize_file_by_metadata
@@ -29,10 +27,7 @@ async def download_file_async(
     try:
         log_step("3/4", f"Downloading {filename}...")
         
-        if track_id not in active_downloads:
-            active_downloads[track_id] = {'progress': 0, 'status': 'downloading'}
-        
-        download_state_manager.set_downloading(track_id, 0, metadata)
+        queue_manager.update_active_progress(track_id, 0, 'downloading')
         
         # Use generous timeouts for large FLAC files
         timeout = aiohttp.ClientTimeout(
@@ -46,11 +41,8 @@ async def download_file_async(
                 if response.status != 200:
                     error_msg = f"HTTP {response.status}"
                     log_error(f"Download failed: {error_msg}")
-                    if track_id in active_downloads:
-                        active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
-                        download_state_manager.set_failed(track_id, error_msg, metadata)
-                        await asyncio.sleep(5)
-                        del active_downloads[track_id]
+                    queue_manager.update_active_progress(track_id, 0, 'failed')
+                    queue_manager.mark_failed(track_id, error_msg)
                     return
                 
                 # Validate content-type to detect XML error responses
@@ -58,37 +50,25 @@ async def download_file_async(
                 if 'xml' in content_type or 'text' in content_type:
                     error_msg = f"Invalid content type: {content_type} (likely quality unavailable)"
                     log_error(f"Download failed: {error_msg}")
-                    if track_id in active_downloads:
-                        active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
-                        download_state_manager.set_failed(track_id, error_msg, metadata)
-                        await asyncio.sleep(5)
-                        del active_downloads[track_id]
+                    queue_manager.update_active_progress(track_id, 0, 'failed')
+                    queue_manager.mark_failed(track_id, error_msg)
                     return
                 
                 total_size = int(response.headers.get('content-length', 0))
                 
                 # Additional validation: tiny files are likely errors
                 if total_size > 0 and total_size < 10000:
-                    # Likely an error XML, read and check
                     content_preview = await response.content.read(500)
                     if content_preview.startswith(b'<?xml') or b'<Error>' in content_preview:
                         error_msg = "Received error response instead of audio (quality likely unavailable)"
                         log_error(f"Download failed: {error_msg}")
-                        if track_id in active_downloads:
-                            active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
-                            download_state_manager.set_failed(track_id, error_msg, metadata)
-                            await asyncio.sleep(5)
-                            del active_downloads[track_id]
+                        queue_manager.update_active_progress(track_id, 0, 'failed')
+                        queue_manager.mark_failed(track_id, error_msg)
                         return
-                    # If it passed, we need to re-request since we consumed part of the stream
-                    # For now, treat tiny files as suspicious and fail
                     error_msg = f"File too small ({total_size} bytes), likely invalid"
                     log_error(f"Download failed: {error_msg}")
-                    if track_id in active_downloads:
-                        active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
-                        download_state_manager.set_failed(track_id, error_msg, metadata)
-                        await asyncio.sleep(5)
-                        del active_downloads[track_id]
+                    queue_manager.update_active_progress(track_id, 0, 'failed')
+                    queue_manager.mark_failed(track_id, error_msg)
                     return
                 
                 downloaded = 0
@@ -104,12 +84,6 @@ async def download_file_async(
                             
                             if total_size > 0:
                                 progress = int((downloaded / total_size) * 100)
-                                active_downloads[track_id] = {
-                                    'progress': progress,
-                                    'status': 'downloading'
-                                }
-                                download_state_manager.update_progress(track_id, progress)
-                                # Update queue manager for frontend sync
                                 queue_manager.update_active_progress(track_id, progress, 'downloading')
                             
                             await asyncio.sleep(0.01)
@@ -119,11 +93,7 @@ async def download_file_async(
                 bitrate = metadata.get('bitrate_kbps', 256)
                 mp3_path = filepath.with_suffix('.mp3')
                 log_step("3.5/4", f"Transcoding to MP3 ({bitrate} kbps)...")
-                active_downloads[track_id] = {
-                    'progress': 95,
-                    'status': 'transcoding'
-                }
-                download_state_manager.update_progress(track_id, 95)
+                queue_manager.update_active_progress(track_id, 95, 'transcoding')
                 await transcode_to_mp3(filepath, mp3_path, bitrate)
                 processed_path = mp3_path
                 metadata['file_ext'] = '.mp3'
@@ -137,11 +107,7 @@ async def download_file_async(
                 bitrate = metadata.get('bitrate_kbps', 192)
                 opus_path = filepath.with_suffix('.opus')
                 log_step("3.5/4", f"Transcoding to Opus ({bitrate} kbps)...")
-                active_downloads[track_id] = {
-                    'progress': 95,
-                    'status': 'transcoding'
-                }
-                download_state_manager.update_progress(track_id, 95)
+                queue_manager.update_active_progress(track_id, 95, 'transcoding')
                 await transcode_to_opus(filepath, opus_path, bitrate)
                 processed_path = opus_path
                 metadata['file_ext'] = '.opus'
@@ -183,11 +149,13 @@ async def download_file_async(
         if run_beets:
             await run_beets_import(final_path)
             
-        # Update state to completed - store the final path for fast file existence checks
+        # Update state to completed
         if metadata is None:
             metadata = {}
         metadata['final_path'] = str(final_path)
-        download_state_manager.set_completed(track_id, final_path.name, metadata)
+        
+        # Mark completed in queue manager (which also records to DB library tables)
+        queue_manager.mark_completed(track_id, final_path.name, metadata)
         
         file_size_mb = final_path.stat().st_size / 1024 / 1024
         display_name = final_path.name if final_path else filename
@@ -203,20 +171,11 @@ async def download_file_async(
 
         print(f"{'='*60}\n")
         
-        await asyncio.sleep(5)
-        
-        if track_id in active_downloads:
-            del active_downloads[track_id]
-        
     except Exception as e:
         log_error(f"Download error: {e}")
         traceback.print_exc()
         
-        if track_id in active_downloads:
-            active_downloads[track_id] = {'progress': 0, 'status': 'failed'}
-            download_state_manager.set_failed(track_id, str(e), metadata)
-            await asyncio.sleep(5)
-            del active_downloads[track_id]
+        queue_manager.mark_failed(track_id, str(e))
         
         if filepath.exists():
             try:

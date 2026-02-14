@@ -542,6 +542,13 @@ class ApiClient {
     }
 
     /**
+     * Get paginated completed tracks
+     */
+    getCompletedTracks(limit = 50, offset = 0, order = 'desc') {
+        return this.get("/queue/completed", { limit, offset, order });
+    }
+
+    /**
      * Force sync covers to Jellyfin
      */
     syncJellyfinCovers() {

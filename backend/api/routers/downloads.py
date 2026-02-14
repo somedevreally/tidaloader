@@ -10,14 +10,13 @@ from fastapi.responses import StreamingResponse
 from api.auth import require_auth
 from api.models import DownloadTrackRequest
 from api.settings import DOWNLOAD_DIR, MP3_QUALITY_MAP, OPUS_QUALITY_MAP
-from api.state import active_downloads
 from api.clients import tidal_client
-from download_state import download_state_manager
 from api.utils.logging import log_info, log_error, log_warning, log_success, log_step
 from api.utils.extraction import extract_stream_url
 from api.services.files import sanitize_path_component
 from api.services.download import download_file_async
 from queue_manager import queue_manager, QueueItem, QUEUE_AUTO_PROCESS, MAX_CONCURRENT_DOWNLOADS
+import database as db
 
 router = APIRouter()
 
@@ -65,10 +64,12 @@ async def get_stream_url(
 
 @router.get("/api/download/state")
 async def get_download_states(username: str = Depends(require_auth)):
+    """Get download states from queue manager (replaces download_state_manager)"""
+    state = queue_manager.get_state()
     return {
-        "active": download_state_manager.get_all_active(),
-        "completed": download_state_manager.get_all_completed(),
-        "failed": download_state_manager.get_all_failed()
+        "active": {str(item['track_id']): item for item in state.get('active', [])},
+        "completed": {str(item['track_id']): item for item in state.get('completed', [])},
+        "failed": {str(item['track_id']): item for item in state.get('failed', [])}
     }
 
 @router.get("/api/download/progress/{track_id}")
@@ -81,34 +82,35 @@ async def download_progress_stream(
         no_data_count = 0
         max_no_data = 60
         
-        saved_state = download_state_manager.get_download_state(track_id)
-        if saved_state:
-            progress = saved_state.get('progress', 0)
-            status = saved_state['status']
+        # Check queue manager for current state
+        active_info = queue_manager._active.get(track_id)
+        if active_info:
+            progress = active_info.get('progress', 0)
+            status = active_info.get('status', 'downloading')
             yield f"data: {json.dumps({'progress': progress, 'track_id': track_id, 'status': status})}\n\n"
-            
-            if status == 'completed':
-                yield f"data: {json.dumps({'progress': 100, 'track_id': track_id, 'status': 'completed'})}\n\n"
-                return
-            elif status == 'failed':
-                error = saved_state.get('error', 'Download failed')
-                yield f"data: {json.dumps({'progress': 0, 'track_id': track_id, 'status': 'failed', 'error': error})}\n\n"
-                return
         
         try:
             while True:
                 current_progress = -1
                 current_status = 'unknown'
                 
-                if track_id in active_downloads:
-                    download_info = active_downloads[track_id]
-                    current_progress = download_info.get('progress', 0)
-                    current_status = download_info.get('status', 'downloading')
+                # Check in-memory active downloads
+                if track_id in queue_manager._active:
+                    info = queue_manager._active[track_id]
+                    current_progress = info.get('progress', 0)
+                    current_status = info.get('status', 'downloading')
                 else:
-                    saved_state = download_state_manager.get_download_state(track_id)
-                    if saved_state:
-                        current_progress = saved_state.get('progress', 0)
-                        current_status = saved_state['status']
+                    # Check DB for completed/failed
+                    queue_items = db.get_queue_items()
+                    for item in queue_items:
+                        if item['track_id'] == track_id:
+                            if item['status'] == 'completed':
+                                current_status = 'completed'
+                                current_progress = 100
+                            elif item['status'] == 'failed':
+                                current_status = 'failed'
+                                current_progress = 0
+                            break
                     else:
                         no_data_count += 1
                 
@@ -154,9 +156,9 @@ async def download_track_server_side(
     username: str = Depends(require_auth)
 ):
     try:
-
-        if request.track_id in active_downloads:
-            current_status = active_downloads[request.track_id].get('status')
+        # Check if already active in queue manager
+        if request.track_id in queue_manager._active:
+            current_status = queue_manager._active[request.track_id].get('status')
             if current_status in ['starting', 'downloading', 'transcoding']:
                 log_warning(f"Download already in progress for track {request.track_id}")
                 return {
@@ -165,55 +167,35 @@ async def download_track_server_side(
                     "message": "Download already in progress"
                 }
         
-
-        saved_state = download_state_manager.get_download_state(request.track_id)
-        if saved_state:
-            if saved_state['status'] == 'downloading':
-                log_warning(f"Download in state manager for track {request.track_id}")
-
-                active_downloads[request.track_id] = {
-                    'progress': saved_state.get('progress', 0),
-                    'status': 'downloading'
-                }
-                return {
-                    "status": "downloading",
-                    "filename": "In progress",
-                    "message": "Download already in progress"
-                }
-            elif saved_state['status'] == 'completed':
-
-                saved_path = saved_state.get('metadata', {}).get('final_path')
-                saved_filename = saved_state.get('metadata', {}).get('title', '')
-                file_still_exists = False
+        # Check DB for recently completed
+        completed_items = db.get_queue_items("completed")
+        for item in completed_items:
+            if item['track_id'] == request.track_id:
+                saved_path = None
+                if item.get('metadata_json'):
+                    try:
+                        meta = json.loads(item['metadata_json'])
+                        saved_path = meta.get('final_path')
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 
-                if saved_path:
-                    file_still_exists = Path(saved_path).exists()
-                elif saved_state.get('filename'):
-
-                    for ext in ['.m4a', '.flac', '.mp3', '.opus']:
-                        potential_path = DOWNLOAD_DIR / f"{saved_state.get('filename')}"
-                        if potential_path.exists():
-                            file_still_exists = True
-                            break
+                file_still_exists = saved_path and Path(saved_path).exists()
                 
                 if file_still_exists:
                     log_warning(f"Track {request.track_id} already completed")
                     return {
                         "status": "exists",
-                        "filename": saved_filename or 'Completed',
+                        "filename": item.get('filename', 'Completed'),
                         "message": "Download already completed"
                     }
                 else:
-                    # File was deleted, clear the completed state and allow re-download
-                    log_info(f"Track {request.track_id} was in completed state but file not found, allowing re-download")
-                    download_state_manager.clear_download(request.track_id)
-        
+                    log_info(f"Track {request.track_id} was completed but file not found, allowing re-download")
+                    break
 
-        
         requested_quality = request.quality.upper() if request.quality else "LOSSLESS"
         
-
-        active_downloads[request.track_id] = {
+        # Mark as starting in queue manager
+        queue_manager._active[request.track_id] = {
             'progress': 0,
             'status': 'starting'
         }
@@ -226,7 +208,8 @@ async def download_track_server_side(
         
         track_info = tidal_client.get_track(request.track_id, source_quality)
         if not track_info:
-            del active_downloads[request.track_id]
+            if request.track_id in queue_manager._active:
+                del queue_manager._active[request.track_id]
             raise HTTPException(status_code=404, detail="Track not found")
         
         metadata = {
@@ -289,7 +272,7 @@ async def download_track_server_side(
                 metadata['total_tracks'] = album_data.get('numberOfTracks')
                 metadata['total_discs'] = album_data.get('numberOfVolumes')
                 
-
+                # Store Tidal IDs in metadata for DB recording (NOT for file embedding)
                 metadata['tidal_track_id'] = str(track_data.get('id', ''))
                 metadata['tidal_artist_id'] = str(artist_data.get('id', ''))
                 metadata['tidal_album_id'] = str(album_data.get('id', ''))
@@ -326,7 +309,8 @@ async def download_track_server_side(
         log_step("2/4", f"Getting stream URL ({source_quality})...")
         stream_url = extract_stream_url(track_info)
         if not stream_url:
-            del active_downloads[request.track_id]
+            if request.track_id in queue_manager._active:
+                del queue_manager._active[request.track_id]
             raise HTTPException(status_code=404, detail="Stream URL not found")
         
         log_success(f"Stream URL: {stream_url[:60]}...")
@@ -365,8 +349,10 @@ async def download_track_server_side(
         
         if final_filepath.exists():
             log_warning("File already exists, skipping download")
-            del active_downloads[request.track_id]
-            download_state_manager.set_completed(request.track_id, final_filename, metadata)
+            if request.track_id in queue_manager._active:
+                del queue_manager._active[request.track_id]
+            # Record in DB even if file exists already
+            queue_manager.mark_completed(request.track_id, final_filename, metadata)
             return {
                 "status": "exists",
                 "filename": final_filename,
@@ -374,7 +360,7 @@ async def download_track_server_side(
                 "message": f"File already exists: {artist_folder}/{album_folder}/{final_filename}"
             }
         
-        active_downloads[request.track_id] = {
+        queue_manager._active[request.track_id] = {
             'progress': 0,
             'status': 'downloading'
         }
@@ -400,15 +386,15 @@ async def download_track_server_side(
         }
         
     except HTTPException:
-        if request.track_id in active_downloads:
-            del active_downloads[request.track_id]
+        if request.track_id in queue_manager._active:
+            del queue_manager._active[request.track_id]
         raise
     except Exception as e:
         log_error(f"Download error: {e}")
         traceback.print_exc()
         
-        if request.track_id in active_downloads:
-            del active_downloads[request.track_id]
+        if request.track_id in queue_manager._active:
+            del queue_manager._active[request.track_id]
         
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -416,11 +402,6 @@ async def download_track_server_side(
 # ============================================================================
 # QUEUE API ENDPOINTS
 # ============================================================================
-
-class QueueAddRequest:
-    """Request model for adding tracks to queue"""
-    def __init__(self, tracks: List[dict]):
-        self.tracks = tracks
 
 from pydantic import BaseModel
 
@@ -476,11 +457,11 @@ async def add_to_queue(
             title=track.title,
             artist=track.artist,
             album=track.album or "",
-            album_artist=track.album_artist or "",  # Capture Album Artist
+            album_artist=track.album_artist or "",
             album_id=track.album_id,
             track_number=track.track_number,
             cover=track.cover,
-            quality=track.quality or "HIGH", # Default to HIGH if not specified
+            quality=track.quality or "HIGH",
             tidal_track_id=track.tidal_track_id,
             tidal_artist_id=track.tidal_artist_id,
             tidal_album_id=track.tidal_album_id,
@@ -577,6 +558,32 @@ async def get_queue_settings(username: str = Depends(require_auth)):
     }
 
 
+@router.get("/api/queue/completed")
+async def get_completed_tracks(
+    limit: int = 50,
+    offset: int = 0,
+    order: str = 'desc',
+    username: str = Depends(require_auth)
+):
+    """Get paginated completed tracks for infinite scroll.
+    
+    Args:
+        limit: Number of items per page (default 50)
+        offset: Starting position (default 0)
+        order: Sort order 'asc' or 'desc' (default 'desc' for newest first)
+    """
+    total = db.get_queue_items_count("completed")
+    items = db.get_queue_items("completed", limit=limit, offset=offset, order=order)
+    
+    return {
+        "items": [queue_manager._db_row_to_result_dict(row) for row in items],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": (offset + len(items)) < total
+    }
+
+
 # ============================================================================
 # QUEUE ITEM PROCESSOR
 # ============================================================================
@@ -623,7 +630,6 @@ async def process_queue_item(item: QueueItem):
         
         # Mark as starting
         queue_manager.update_active_progress(track_id, 0, 'starting')
-        active_downloads[track_id] = {'progress': 0, 'status': 'starting'}
         
         is_mp3_request = requested_quality in MP3_QUALITY_MAP
         is_opus_request = requested_quality in OPUS_QUALITY_MAP
@@ -643,14 +649,13 @@ async def process_queue_item(item: QueueItem):
         stream_url = extract_stream_url(track_info)
         
         # Validate the stream URL returns actual audio content (not XML error)
-        # This catches cases where API returns a URL but the quality isn't actually available
         if stream_url and source_quality in ('HI_RES', 'HI_RES_LOSSLESS'):
             is_valid = await validate_stream_url(stream_url)
             if not is_valid:
                 log_warning(f"[Queue] {source_quality} stream returns invalid content for {item.title}, falling back to LOSSLESS")
-                stream_url = None  # Trigger fallback below
+                stream_url = None
         
-        # Fallback: If HI_RES or HI_RES_LOSSLESS requested but no stream URL found (or invalid), try LOSSLESS
+        # Fallback: If HI_RES or HI_RES_LOSSLESS requested but no stream URL found, try LOSSLESS
         if not stream_url and source_quality in ('HI_RES', 'HI_RES_LOSSLESS'):
             log_warning(f"[Queue] {source_quality} not available for {item.title}, falling back to LOSSLESS")
             source_quality = 'LOSSLESS'
@@ -672,7 +677,7 @@ async def process_queue_item(item: QueueItem):
             'tidal_album_id': item.tidal_album_id,
         }
         
-        # Extract actual album/track info from Tidal API response (like download_track_server_side does)
+        # Extract actual album/track info from Tidal API response
         if isinstance(track_data, dict):
             album_data = track_data.get('album', {})
             if isinstance(album_data, dict) and album_data.get('title'):
@@ -689,7 +694,7 @@ async def process_queue_item(item: QueueItem):
                 if album_data.get('type') == 'COMPILATION' or (album_artist and album_artist.lower() in ['various artists', 'various']):
                     metadata['compilation'] = True
             else:
-                metadata['album'] = item.album  # Fallback to queue item
+                metadata['album'] = item.album
                 metadata['album_artist'] = item.album_artist or item.artist
             
             metadata['track_number'] = track_data.get('trackNumber') or item.track_number
@@ -732,7 +737,7 @@ async def process_queue_item(item: QueueItem):
             metadata['target_format'] = 'opus'
             metadata['bitrate_kbps'] = OPUS_QUALITY_MAP[requested_quality]
         
-        # Add cover URL from queue item (frontend passes this now)
+        # Add cover URL from queue item
         if item.cover:
             cover_id_str = str(item.cover).replace('-', '/')
             metadata['cover_url'] = f"https://resources.tidal.com/images/{cover_id_str}/640x640.jpg"
@@ -771,7 +776,6 @@ async def process_queue_item(item: QueueItem):
         # Use shared logic for consistent path resolution
         from api.services.files import get_output_relative_path as calc_rel_path
         
-        # We need to construct a metadata dict for get_output_relative_path
         path_metadata = {
             'artist': artist,
             'album': album,
@@ -797,13 +801,10 @@ async def process_queue_item(item: QueueItem):
         if final_filepath.exists():
             log_warning(f"[Queue] File exists: {final_filename}")
             queue_manager.mark_completed(track_id, final_filename, metadata)
-            if track_id in active_downloads:
-                del active_downloads[track_id]
             return
         
         # Update status and start download
         queue_manager.update_active_progress(track_id, 0, 'downloading')
-        active_downloads[track_id] = {'progress': 0, 'status': 'downloading'}
         
 
         await download_file_async(
@@ -819,13 +820,7 @@ async def process_queue_item(item: QueueItem):
             item.use_musicbrainz
         )
         
-        # Mark as completed in queue manager
-        queue_manager.mark_completed(track_id, final_filename, metadata)
-        
     except Exception as e:
         log_error(f"[Queue] Failed to process {item.track_id}: {e}")
         traceback.print_exc()
         queue_manager.mark_failed(item.track_id, str(e))
-        
-        if item.track_id in active_downloads:
-            del active_downloads[item.track_id]
