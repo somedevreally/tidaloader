@@ -185,13 +185,13 @@ function AutoSaveToggle({
 export function SettingsPanel() {
   const [syncTime, setSyncTime] = useState("04:00");
   const [template, setTemplate] = useState(
-    "{Artist}/{Album}/{TrackNumber} - {Title}",
+    "{Artist} - {Title}",
   );
   const [activeDownloads, setActiveDownloads] = useState(3);
   const [useMusicBrainz, setUseMusicBrainz] = useState(true);
   const [runBeets, setRunBeets] = useState(false);
   const [embedLyrics, setEmbedLyrics] = useState(false);
-  const [quality, setQuality] = useState("LOSSLESS");
+  const [quality, setQuality] = useState("HI_RES_LOSSLESS");
   const [jellyfinUrl, setJellyfinUrl] = useState("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState("");
   const [jellyfinStatus, setJellyfinStatus] = useState(null);
