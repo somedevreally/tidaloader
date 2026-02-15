@@ -479,7 +479,7 @@ class PlaylistManager:
         org_template = settings.organization_template
         group_compilations = settings.group_compilations
         
-      if playlist.use_playlist_folder:
+    if playlist.use_playlist_folder:
         safe_pl_name = sanitize_path_component(playlist.name)
         # Keep global naming pattern, just change root folder
         org_template = f"tidaloader_playlists/{safe_pl_name}/{settings.organization_template}"
