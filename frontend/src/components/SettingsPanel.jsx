@@ -224,7 +224,7 @@ export function SettingsPanel() {
           setSyncTime(s.sync_time || "04:00");
           setTemplate(
             s.organization_template ||
-              "{Artist}/{Album}/{TrackNumber} - {Title}",
+              "{Artist} - {Title}",
           );
           setActiveDownloads(s.active_downloads || 3);
           setUseMusicBrainz(
@@ -310,7 +310,7 @@ export function SettingsPanel() {
           setSyncTime(s.sync_time || "04:00");
           setTemplate(
             s.organization_template ||
-              "{Artist}/{Album}/{TrackNumber} - {Title}",
+              "{Artist} - {Title}",
           );
           setActiveDownloads(s.active_downloads || 3);
           setUseMusicBrainz(
