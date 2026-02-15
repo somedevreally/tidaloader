@@ -479,12 +479,12 @@ class PlaylistManager:
         org_template = settings.organization_template
         group_compilations = settings.group_compilations
         
-    if playlist.use_playlist_folder:
-        safe_pl_name = sanitize_path_component(playlist.name)
-        # Keep global naming pattern, just change root folder
-        org_template = f"tidaloader_playlists/{safe_pl_name}/{settings.organization_template}"
-        # or even: org_template = f"tidaloader_playlists/{safe_pl_name}/{org_template}" to keep original
-        # group_compilations = False  # ← decide if you still want this
+        if playlist.use_playlist_folder:
+            safe_pl_name = sanitize_path_component(playlist.name)
+            # Use 'tidaloader_playlists' explicitly to match PLAYLISTS_DIR logic
+            # This makes the path relative to DOWNLOAD_DIR be: tidaloader_playlists/PlaylistName/Track - Title
+            org_template = f"tidaloader_playlists/{safe_pl_name}/{settings.organization_template}"
+            #group_compilations = False
         
         for i, item in enumerate(raw_items):
             # Robust extraction logic mirrored from search.py
