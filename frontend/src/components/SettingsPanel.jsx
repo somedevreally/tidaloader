@@ -185,13 +185,13 @@ function AutoSaveToggle({
 export function SettingsPanel() {
   const [syncTime, setSyncTime] = useState("04:00");
   const [template, setTemplate] = useState(
-    "{Artist} - {Title}",
+    "{Artist}/{Album}/{TrackNumber} - {Title}",
   );
   const [activeDownloads, setActiveDownloads] = useState(3);
   const [useMusicBrainz, setUseMusicBrainz] = useState(true);
   const [runBeets, setRunBeets] = useState(false);
   const [embedLyrics, setEmbedLyrics] = useState(false);
-  const [quality, setQuality] = useState("HI_RES_LOSSLESS");
+  const [quality, setQuality] = useState("LOSSLESS");
   const [jellyfinUrl, setJellyfinUrl] = useState("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState("");
   const [jellyfinStatus, setJellyfinStatus] = useState(null);
@@ -224,17 +224,17 @@ export function SettingsPanel() {
           setSyncTime(s.sync_time || "04:00");
           setTemplate(
             s.organization_template ||
-              "{Artist}/{Album}/{TrackNumber} - {Title}",
+              "{Artist} - {Title}",
           );
           setActiveDownloads(s.active_downloads || 3);
           setUseMusicBrainz(
             s.use_musicbrainz !== undefined ? s.use_musicbrainz : true,
           );
           setRunBeets(s.run_beets || false);
-          setEmbedLyrics(s.embed_lyrics || false);
+          setEmbedLyrics(s.embed_lyrics || true);
           setJellyfinUrl(s.jellyfin_url || "");
           setJellyfinApiKey(s.jellyfin_api_key || "");
-          setQuality(s.quality || "LOSSLESS");
+          setQuality(s.quality || "HI_RES_LOSSLESS");
 
           if (
             s.organization_template &&
